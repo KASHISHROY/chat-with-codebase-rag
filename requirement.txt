@@ -1,0 +1,44 @@
+# ============================================================
+# requirements.txt
+# Chat With Your Codebase — RAG Developer Assistant
+# ============================================================
+# Install all dependencies with:
+#   pip install -r requirements.txt
+# ============================================================
+
+# ---- Core RAG Framework ----
+# Unpinned so pip can resolve compatible versions automatically
+langchain
+langchain-community
+langchain-core
+
+# ---- Vector Database ----
+faiss-cpu                         # Facebook AI Similarity Search (CPU version)
+                                  # Use faiss-gpu if you have a CUDA GPU
+
+# ---- Embeddings ----
+# HuggingFace (free, local) — DEFAULT
+sentence-transformers             # Local embedding models (all-MiniLM-L6-v2)
+langchain-huggingface             # LangChain wrapper for HuggingFace embeddings
+
+# OpenAI (paid, API-based) — OPTIONAL
+openai                            # OpenAI Python SDK
+langchain-openai                  # LangChain wrapper for OpenAI
+
+# ---- GitHub Repository Cloning ----
+GitPython                         # Clone git repos in Python (git clone equivalent)
+
+# ---- Utilities ----
+python-dotenv                     # Load .env files for API key management
+numpy                             # Numerical arrays (required by FAISS)
+
+# ---- Scientific / ML Libraries ----
+torch                             # PyTorch (required by sentence-transformers)
+transformers                      # HuggingFace Transformers
+tokenizers                        # Fast tokenizers
+
+# ---- (Day 2+) FastAPI Web Server ----
+# Uncomment these when we add the API layer:
+# fastapi
+# uvicorn
+# pydantic
