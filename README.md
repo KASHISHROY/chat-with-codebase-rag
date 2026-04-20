@@ -106,4 +106,4 @@ User asks a question
 - [ ] Day 2: FastAPI REST endpoints
 - [ ] Day 3: React frontend with chat UI
 - [ ] Day 4: Streaming responses + syntax highlighting
-- [ ] Day 5: Multi-repo support + authentication
+- [ ] Day 5: Multi-repo support + authentication.
