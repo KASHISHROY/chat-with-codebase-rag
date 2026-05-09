@@ -93,7 +93,7 @@ User asks a question
 
 ## 💡 Tips
 
-- **First run downloads ~90MB** for the HuggingFace model — this is normal
+- **First run downloads ~90MB** for the HuggingFace model — this is normal.
 - **Index is saved** to `./faiss_index/` — reload it without re-cloning
 - **Large repos** (like React source) may take 2–5 minutes to index
 - For **better answers**, add `OPENAI_API_KEY` to your `.env`
