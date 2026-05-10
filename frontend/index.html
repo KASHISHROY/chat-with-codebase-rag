@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat With Your Codebase</title>
+  <style>
+    :root {
+      --bg: #f7f7f2;
+      --panel: #ffffff;
+      --ink: #1e2726;
+      --muted: #69706d;
+      --line: #d9ded8;
+      --accent: #197278;
+      --accent-2: #c44536;
+      --accent-3: #384b70;
+      --soft: #edf4f2;
+      --code: #111816;
+      --code-text: #d7f0e8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+    }
+
+    button, input {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 7px;
+      min-height: 38px;
+      padding: 0 12px;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button.warn { color: var(--accent-2); }
+    button:disabled { opacity: .55; cursor: wait; }
+
+    input {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 0 12px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+    }
+
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(25, 114, 120, .12); }
+
+    .app {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr) 380px;
+      min-height: 100vh;
+    }
+
+    .sidebar, .inspector {
+      background: #fbfbf7;
+      border-right: 1px solid var(--line);
+      padding: 18px;
+      overflow: auto;
+    }
+
+    .inspector {
+      border-right: 0;
+      border-left: 1px solid var(--line);
+    }
+
+    .main {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+      min-height: 100vh;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .brand h1 {
+      font-size: 18px;
+      line-height: 1.2;
+      margin: 0;
+      font-weight: 760;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      color: var(--accent-3);
+      background: #fff;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .section { margin: 20px 0; }
+    .section h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+
+    .index-form {
+      display: grid;
+      gap: 10px;
+    }
+
+    .progress {
+      height: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      transition: width .2s ease;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+      margin-top: 8px;
+      min-height: 38px;
+    }
+
+    .repo-list, .suggestions, .file-list, .risk-list, .source-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .repo-item, .suggestion, .file-item, .risk-item, .source-item {
+      width: 100%;
+      text-align: left;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px;
+      min-height: auto;
+    }
+
+    .repo-item strong, .file-item strong {
+      display: block;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .repo-item span, .file-item span, .risk-item span, .source-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 3px;
+    }
+
+    .topbar {
+      border-bottom: 1px solid var(--line);
+      padding: 16px 20px;
+      background: rgba(255, 255, 255, .75);
+      backdrop-filter: blur(10px);
+    }
+
+    .topbar-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .topbar h2 {
+      margin: 0;
+      font-size: 18px;
+      overflow-wrap: anywhere;
+    }
+
+    .metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .metric {
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 7px 9px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .messages {
+      padding: 20px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .message {
+      max-width: 860px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: #eef1fb;
+      border-color: #d3d9ef;
+    }
+
+    .message.system {
+      background: transparent;
+      border-style: dashed;
+      color: var(--muted);
+    }
+
+    .message-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .chat-form {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      padding: 16px 20px;
+      border-top: 1px solid var(--line);
+      background: #fbfbf7;
+    }
+
+    pre {
+      margin: 10px 0 0;
+      background: var(--code);
+      color: var(--code-text);
+      border-radius: 7px;
+      padding: 12px;
+      overflow: auto;
+      line-height: 1.45;
+      font-size: 12px;
+      max-height: 320px;
+    }
+
+    .empty {
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1120px) {
+      .app { grid-template-columns: 280px 1fr; }
+      .inspector { display: none; }
+    }
+
+    @media (max-width: 760px) {
+      .app { display: block; }
+      .sidebar, .inspector { border: 0; border-bottom: 1px solid var(--line); max-height: none; }
+      .main { min-height: 70vh; }
+      .chat-form { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>Chat With Your Codebase</h1>
+        <span class="badge">Free RAG</span>
+      </div>
+
+      <form id="indexForm" class="index-form">
+        <input id="repoUrl" placeholder="https://github.com/user/repo" autocomplete="off">
+        <button class="primary" type="submit">Index Repo</button>
+      </form>
+      <div class="progress"><span id="progressBar"></span></div>
+      <div id="status" class="status">No repository selected.</div>
+
+      <div class="section">
+        <h2>Repos</h2>
+        <div id="repoList" class="repo-list"></div>
+      </div>
+
+      <div class="section">
+        <h2>Suggestions</h2>
+        <div id="suggestions" class="suggestions"></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h2 id="repoTitle">Choose a repo</h2>
+          <button id="riskButton" class="warn" type="button">Scan Risks</button>
+        </div>
+        <div id="metrics" class="metrics"></div>
+      </header>
+
+      <section id="messages" class="messages">
+        <div class="message system">Index a public GitHub repository, then ask questions about files, flows, architecture, or risky code.</div>
+      </section>
+
+      <form id="chatForm" class="chat-form">
+        <input id="question" placeholder="Ask about this codebase..." autocomplete="off">
+        <button class="primary" type="submit">Ask</button>
+      </form>
+    </main>
+
+    <aside class="inspector">
+      <div class="section">
+        <h2>Architecture</h2>
+        <div id="architecture" class="empty">No architecture summary yet.</div>
+      </div>
+
+      <div class="section">
+        <h2>Sources</h2>
+        <div id="sources" class="source-list"></div>
+      </div>
+
+      <div class="section">
+        <h2>Files</h2>
+        <div id="files" class="file-list"></div>
+      </div>
+
+      <div class="section">
+        <h2>Risks</h2>
+        <div id="risks" class="risk-list"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const state = {
+      repoId: null,
+      polling: null,
+      repos: []
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function api(path, options = {}) {
+      return fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...options
+      }).then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Request failed");
+        return data;
+      });
+    }
+
+    function setStatus(text, progress = 0) {
+      $("status").textContent = text;
+      $("progressBar").style.width = `${progress}%`;
+    }
+
+    function repoName(url) {
+      return url.replace("https://github.com/", "").replace("git@github.com:", "").replace(".git", "");
+    }
+
+    function renderRepos() {
+      const box = $("repoList");
+      box.innerHTML = "";
+      if (!state.repos.length) {
+        box.innerHTML = '<div class="empty">Indexed repositories will appear here.</div>';
+        return;
+      }
+      state.repos.forEach((repo) => {
+        const button = document.createElement("button");
+        button.className = "repo-item";
+        button.innerHTML = `<strong>${repoName(repo.github_url)}</strong><span>${repo.status} - ${repo.file_count || 0} files - ${repo.chunk_count || 0} chunks</span>`;
+        button.onclick = () => selectRepo(repo.repo_id);
+        box.appendChild(button);
+      });
+    }
+
+    function renderRepo(repo) {
+      state.repoId = repo.repo_id;
+      $("repoTitle").textContent = repoName(repo.github_url);
+      setStatus(`${repo.status}: ${repo.message || ""}`, repo.progress || 0);
+      renderMetrics(repo);
+      renderArchitecture(repo);
+      renderSuggestions(repo.suggestions || []);
+      if (repo.status === "ready") loadSources(repo.repo_id);
+    }
+
+    function renderMetrics(repo) {
+      const metrics = $("metrics");
+      const frameworks = repo.architecture?.frameworks?.join(", ") || "Detecting";
+      metrics.innerHTML = [
+        `${repo.file_count || 0} files`,
+        `${repo.chunk_count || 0} chunks`,
+        `${repo.status}`,
+        frameworks
+      ].map((item) => `<span class="metric">${item}</span>`).join("");
+    }
+
+    function renderArchitecture(repo) {
+      const box = $("architecture");
+      if (!repo.architecture) {
+        box.className = "empty";
+        box.textContent = "No architecture summary yet.";
+        return;
+      }
+      box.className = "";
+      const languages = repo.architecture.languages.slice(0, 6).map((item) => `${item.name}: ${item.files}`).join("<br>");
+      const folders = repo.architecture.top_folders.slice(0, 6).map((item) => `${item.name}: ${item.files}`).join("<br>");
+      const entrypoints = repo.architecture.entrypoints.slice(0, 6).join("<br>") || "No standard entrypoints found";
+      const onboarding = (repo.onboarding || []).map((item) => `<p>${item}</p>`).join("");
+      box.innerHTML = `${onboarding}<h2>Languages</h2>${languages}<h2>Folders</h2>${folders}<h2>Entrypoints</h2>${entrypoints}`;
+    }
+
+    function renderSuggestions(items) {
+      const box = $("suggestions");
+      box.innerHTML = "";
+      if (!items.length) {
+        box.innerHTML = '<div class="empty">Suggestions appear after indexing.</div>';
+        return;
+      }
+      items.forEach((text) => {
+        const button = document.createElement("button");
+        button.className = "suggestion";
+        button.textContent = text;
+        button.onclick = () => {
+          $("question").value = text;
+          $("chatForm").requestSubmit();
+        };
+        box.appendChild(button);
+      });
+    }
+
+    function addMessage(text, type = "assistant", meta = "") {
+      const div = document.createElement("div");
+      div.className = `message ${type}`;
+      div.innerHTML = meta ? `<div class="message-meta">${meta}</div>${escapeHtml(text)}` : escapeHtml(text);
+      $("messages").appendChild(div);
+      $("messages").scrollTop = $("messages").scrollHeight;
+      return div;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function renderSources(sources) {
+      const box = $("sources");
+      box.innerHTML = "";
+      if (!sources?.length) {
+        box.innerHTML = '<div class="empty">Citations from answers appear here.</div>';
+        return;
+      }
+      sources.slice(0, 8).forEach((source) => {
+        const item = document.createElement("div");
+        item.className = "source-item";
+        item.innerHTML = `<strong>${source.file_path}</strong><span>lines ${source.start_line}-${source.end_line} - score ${source.score?.toFixed(2) || "n/a"}</span><pre>${escapeHtml(source.content.slice(0, 1200))}</pre>`;
+        box.appendChild(item);
+      });
+    }
+
+    async function loadSources(repoId) {
+      const data = await api(`/api/repos/${repoId}/sources`);
+      const files = $("files");
+      files.innerHTML = "";
+      data.files.slice(0, 80).forEach((file) => {
+        const item = document.createElement("div");
+        item.className = "file-item";
+        item.innerHTML = `<strong>${file.file_path}</strong><span>${file.chunks} chunks - ${file.extension || "text"}</span>`;
+        files.appendChild(item);
+      });
+      if (!data.files.length) files.innerHTML = '<div class="empty">No files loaded.</div>';
+    }
+
+    async function refreshRepos() {
+      state.repos = await api("/api/repos");
+      renderRepos();
+    }
+
+    async function selectRepo(repoId) {
+      const repo = await api(`/api/repos/${repoId}`);
+      renderRepo(repo);
+      if (repo.status === "indexing" || repo.status === "queued") startPolling(repoId);
+    }
+
+    function startPolling(repoId) {
+      clearInterval(state.polling);
+      state.polling = setInterval(async () => {
+        const repo = await api(`/api/repos/${repoId}`);
+        renderRepo(repo);
+        await refreshRepos();
+        if (repo.status === "ready" || repo.status === "failed") clearInterval(state.polling);
+      }, 1200);
+    }
+
+    $("indexForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const githubUrl = $("repoUrl").value.trim();
+      if (!githubUrl) return;
+      setStatus("Starting index job...", 3);
+      const data = await api("/api/index", {
+        method: "POST",
+        body: JSON.stringify({ github_url: githubUrl })
+      }).catch((error) => {
+        setStatus(error.message, 0);
+      });
+      if (!data) return;
+      state.repoId = data.repo_id;
+      startPolling(data.repo_id);
+      await refreshRepos();
+    });
+
+    $("chatForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const question = $("question").value.trim();
+      if (!question || !state.repoId) return;
+      addMessage(question, "user");
+      $("question").value = "";
+      const pending = addMessage("Searching indexed code...", "system");
+      try {
+        const data = await api(`/api/repos/${state.repoId}/chat`, {
+          method: "POST",
+          body: JSON.stringify({ question, top_k: 6 })
+        });
+        pending.remove();
+        const meta = `<span>${data.mode === "llm" ? "LLM" : "Free retrieval"}</span><span>confidence: ${data.confidence}</span>`;
+        addMessage(data.answer, "assistant", meta);
+        renderSources(data.sources || []);
+      } catch (error) {
+        pending.textContent = error.message;
+      }
+    });
+
+    $("riskButton").addEventListener("click", async () => {
+      if (!state.repoId) return;
+      const box = $("risks");
+      box.innerHTML = '<div class="empty">Scanning indexed files...</div>';
+      try {
+        const data = await api(`/api/repos/${state.repoId}/risks`);
+        box.innerHTML = "";
+        if (!data.findings.length) {
+          box.innerHTML = '<div class="empty">No simple risk signals found.</div>';
+          return;
+        }
+        data.findings.forEach((risk) => {
+          const item = document.createElement("div");
+          item.className = "risk-item";
+          item.innerHTML = `<strong>${risk.type}</strong><span>${risk.file_path}:${risk.line}</span><pre>${escapeHtml(risk.preview)}</pre>`;
+          box.appendChild(item);
+        });
+      } catch (error) {
+        box.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+      }
+    });
+
+    refreshRepos().then(() => {
+      if (state.repos[0]) selectRepo(state.repos[0].repo_id);
+    });
+  </script>
+</body>
+</html>

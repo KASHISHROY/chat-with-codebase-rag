@@ -1,8 +1,3 @@
-# ============================================================
-# .gitignore
-# Chat With Your Codebase — RAG Developer Assistant
-# ============================================================
-
 # Python
 __pycache__/
 *.py[cod]
@@ -15,13 +10,11 @@ build/
 venv/
 env/
 
-# Environment variables — NEVER commit this!
+# Environment variables
 .env
 
-# FAISS index files (generated, can be large)
+# Generated indexes and cloned repositories
 faiss_index/
-
-# Cloned repositories (temporary files)
 cloned_repos/
 /tmp/
 
@@ -35,12 +28,11 @@ cloned_repos/
 .DS_Store
 Thumbs.db
 
-# Node (for React frontend — Day 3)
+# Frontend dependencies/builds
 node_modules/
 .next/
-dist/
 
-# Jupyter Notebooks checkpoints
+# Jupyter
 .ipynb_checkpoints/
 
 # Logs

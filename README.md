@@ -1,109 +1,81 @@
-# Chat With Your Codebase — RAG Developer Assistant
+# Chat With Your Codebase
 
-A Retrieval-Augmented Generation (RAG) system that lets you ask questions about any GitHub repository in plain English.
+A free-first RAG developer assistant that indexes a public GitHub repository and lets you ask source-grounded questions about the code.
 
-## 🚀 Quick Start
+## What It Does
 
-### 1. Clone this project
-```bash
-git clone <this-repo-url>
-cd chat-with-codebase-rag
-```
+- Clones a GitHub repository.
+- Loads supported code and documentation files.
+- Splits files into searchable chunks with file and line metadata.
+- Creates local HuggingFace embeddings by default.
+- Stores vectors in FAISS.
+- Answers questions with citations to exact files and line ranges.
+- Builds a lightweight architecture summary.
+- Suggests useful onboarding questions.
+- Scans for simple risk signals like TODOs, broad exception handling, debug logs, and possible secret-like assignments.
+- Serves a no-build browser UI from FastAPI.
 
-### 2. Create a virtual environment
+## Quick Start
+
 ```bash
 python -m venv venv
-source venv/bin/activate      # Mac/Linux
-venv\Scripts\activate         # Windows
-```
-
-### 3. Install dependencies
-```bash
+venv\Scripts\activate
 pip install -r requirements.txt
+uvicorn backend.main:app --reload
 ```
 
-### 4. Set up environment variables
+Open:
+
+```text
+http://127.0.0.1:8000
+```
+
+## Free Mode
+
+The default mode uses:
+
+- `sentence-transformers/all-MiniLM-L6-v2` for local embeddings.
+- FAISS for local vector search.
+- A deterministic answer formatter that cites retrieved chunks.
+
+No API key is required.
+
+## Optional LLM Mode
+
+Create `.env` from `.env.example` and add:
+
 ```bash
-cp .env.example .env
-# Edit .env and optionally add your OPENAI_API_KEY
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4o-mini
 ```
 
-### 5. Run the system
-```bash
-cd backend
-python main.py
+When the key is present, chat responses use an LLM with the retrieved code context. If the call fails, the app falls back to free retrieval mode.
+
+## API
+
+```text
+POST /api/index
+GET  /api/repos
+GET  /api/repos/{repo_id}
+POST /api/repos/{repo_id}/chat
+GET  /api/repos/{repo_id}/sources
+GET  /api/repos/{repo_id}/risks
 ```
 
-### 6. Use it!
-```
-Enter GitHub repository URL: https://github.com/tiangolo/fastapi
-Your question: Where is the routing logic implemented?
-```
+## Project Structure
 
----
-
-## 📁 Project Structure
-
-```
-chat-with-codebase-rag/
-├── backend/
-│   ├── main.py          # Entry point — runs the full pipeline
-│   ├── repo_loader.py   # Clones GitHub repos and loads files
-│   ├── chunking.py      # Splits files into meaningful chunks
-│   ├── embeddings.py    # Converts text to embedding vectors
-│   └── vector_store.py  # FAISS index: store and search vectors
-├── frontend/            # (Day 2+) React UI
-├── requirements.txt     # Python dependencies
-├── .env.example         # Template for environment variables
-└── README.md
+```text
+backend/
+  main.py          FastAPI app and repo session orchestration
+  repo_loader.py   GitHub cloning and file loading
+  chunking.py      Language-aware chunking
+  embeddings.py    Local/OpenAI embedding providers
+  vector_store.py  FAISS index build/load/search
+  insights.py      Free architecture, suggestions, risks, and answers
+frontend/
+  index.html       Static app UI served by FastAPI
 ```
 
----
+## Resume Angle
 
-## 🧠 How It Works (RAG Pipeline)
-
-```
-GitHub URL
-    ↓
-[repo_loader.py]  → Clone repo → Load .py, .js, .md files
-    ↓
-[chunking.py]     → Split files into 1500-char chunks with metadata
-    ↓
-[embeddings.py]   → Convert each chunk to a 384-dim vector
-    ↓
-[vector_store.py] → Store vectors in FAISS index
-    ↓
-User asks a question
-    ↓
-[vector_store.py] → Embed question → Find top-5 similar chunks
-    ↓
-[main.py]         → Send question + chunks to LLM → Return answer
-```
-
----
-
-## ⚙️ Configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `EMBEDDING_PROVIDER` | `huggingface` | Use `huggingface` (free) or `openai` (paid) |
-| `OPENAI_API_KEY` | None | Required only for OpenAI embeddings + LLM answers |
-
----
-
-## 💡 Tips
-
-- **First run downloads ~90MB** for the HuggingFace model — this is normal.
-- **Index is saved** to `./faiss_index/` — reload it without re-cloning
-- **Large repos** (like React source) may take 2–5 minutes to index
-- For **better answers**, add `OPENAI_API_KEY` to your `.env`
-
----
-
-## 🗺️ Roadmap
-
-- [x] Day 1: Backend RAG pipeline (CLI)
-- [ ] Day 2: FastAPI REST endpoints
-- [ ] Day 3: React frontend with chat UI
-- [ ] Day 4: Streaming responses + syntax highlighting
-- [ ] Day 5: Multi-repo support + authentication.
+Built a full-stack RAG developer assistant that indexes GitHub repositories, performs semantic code search with FAISS and local embeddings, and answers developer questions with source citations, architecture summaries, suggested onboarding prompts, and lightweight risk scanning.

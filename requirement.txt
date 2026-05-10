@@ -1,44 +1,33 @@
-# ============================================================
-# requirements.txt
-# Chat With Your Codebase — RAG Developer Assistant
-# ============================================================
-# Install all dependencies with:
-#   pip install -r requirements.txt
-# ============================================================
-
-# ---- Core RAG Framework ----
-# Unpinned so pip can resolve compatible versions automatically
+# Core RAG framework
 langchain
 langchain-community
 langchain-core
+langchain-text-splitters
 
-# ---- Vector Database ----
-faiss-cpu                         # Facebook AI Similarity Search (CPU version)
-                                  # Use faiss-gpu if you have a CUDA GPU
+# API server
+fastapi
+uvicorn[standard]
+pydantic
 
-# ---- Embeddings ----
-# HuggingFace (free, local) — DEFAULT
-sentence-transformers             # Local embedding models (all-MiniLM-L6-v2)
-langchain-huggingface             # LangChain wrapper for HuggingFace embeddings
+# Vector database
+faiss-cpu
 
-# OpenAI (paid, API-based) — OPTIONAL
-openai                            # OpenAI Python SDK
-langchain-openai                  # LangChain wrapper for OpenAI
+# Free local embeddings
+sentence-transformers
+langchain-huggingface
 
-# ---- GitHub Repository Cloning ----
-GitPython                         # Clone git repos in Python (git clone equivalent)
+# Optional OpenAI mode
+openai
+langchain-openai
 
-# ---- Utilities ----
-python-dotenv                     # Load .env files for API key management
-numpy                             # Numerical arrays (required by FAISS)
+# GitHub repository cloning
+GitPython
 
-# ---- Scientific / ML Libraries ----
-torch                             # PyTorch (required by sentence-transformers)
-transformers                      # HuggingFace Transformers
-tokenizers                        # Fast tokenizers
+# Utilities
+python-dotenv
+numpy
 
-# ---- (Day 2+) FastAPI Web Server ----
-# Uncomment these when we add the API layer:
-# fastapi
-# uvicorn
-# pydantic
+# ML dependencies used by sentence-transformers
+torch
+transformers
+tokenizers

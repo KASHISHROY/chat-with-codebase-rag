@@ -1,0 +1,6 @@
+# Keep this file for the standard pip command:
+#   pip install -r requirements.txt
+#
+# The project originally used requirement.txt, so both files are kept in sync.
+
+-r requirement.txt
