@@ -72,6 +72,33 @@ hybrid retrieval -> repo facts -> local LLM answer -> cited sources
 
 If Ollama is not configured or fails, the app falls back to the local rule/fact answer engine.
 
+## Better API Answers With Gemini
+
+You can also use Gemini as the explanation model while keeping HuggingFace + FAISS for retrieval.
+
+1. Create a Gemini API key in Google AI Studio.
+2. Add it to `.env`:
+
+```bash
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+3. Install dependencies and restart:
+
+```bash
+pip install -r requirements.txt
+uvicorn backend.main:app
+```
+
+The answer flow becomes:
+
+```text
+question -> FAISS/hybrid retrieval -> repo facts + top chunks -> Gemini -> cited explanation
+```
+
+The UI will show `gemini` as the answer mode when this path is used.
+
 ## Optional LLM Mode
 
 Create `.env` from `.env.example` and add:

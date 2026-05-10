@@ -18,6 +18,7 @@ import os
 import shutil
 import stat
 import tempfile
+from urllib.parse import quote
 from git import Repo  # GitPython library — lets us clone repos in Python
 
 # -------------------------------------------------------
@@ -71,7 +72,18 @@ def handle_remove_readonly(func, path, exc_info):
     func(path)
 
 
-def clone_repository(github_url: str, clone_dir: str = None) -> str:
+def authenticated_clone_url(github_url: str, github_token: str | None = None) -> str:
+    """
+    Add a short-lived GitHub token to HTTPS clone URLs when one is provided.
+    The original URL is still what the app stores and displays.
+    """
+    if not github_token or not github_url.startswith("https://github.com/"):
+        return github_url
+    safe_token = quote(github_token, safe="")
+    return github_url.replace("https://", f"https://x-access-token:{safe_token}@", 1)
+
+
+def clone_repository(github_url: str, clone_dir: str = None, github_token: str | None = None) -> str:
     """
     Clone a GitHub repository to a local directory.
 
@@ -101,7 +113,7 @@ def clone_repository(github_url: str, clone_dir: str = None) -> str:
 
     # Use GitPython to clone — this is the equivalent of running:
     # git clone <github_url> <clone_dir>
-    Repo.clone_from(github_url, clone_dir)
+    Repo.clone_from(authenticated_clone_url(github_url, github_token), clone_dir)
 
     print(f"      Repository cloned successfully!\n")
     return clone_dir

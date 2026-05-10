@@ -6,322 +6,581 @@
   <title>Chat With Your Codebase</title>
   <style>
     :root {
-      --bg: #f7f7f2;
+      --bg: #f5f7fb;
       --panel: #ffffff;
-      --ink: #1e2726;
-      --muted: #69706d;
-      --line: #d9ded8;
-      --accent: #197278;
-      --accent-2: #c44536;
-      --accent-3: #384b70;
-      --soft: #edf4f2;
-      --code: #111816;
-      --code-text: #d7f0e8;
+      --panel-soft: #f8fafc;
+      --ink: #16202a;
+      --muted: #667085;
+      --line: #d8dee8;
+      --accent: #0f766e;
+      --accent-dark: #115e59;
+      --blue: #314f7e;
+      --red: #b42318;
+      --amber: #b7791f;
+      --green: #15803d;
+      --code: #111827;
+      --code-text: #d7f7ef;
+      --shadow: 0 16px 36px rgba(16, 24, 40, .08);
     }
 
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
+      min-height: 100vh;
       background: var(--bg);
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      min-height: 100vh;
       overflow: hidden;
     }
 
-    button, input {
+    button, input, select {
       font: inherit;
     }
 
     button {
+      min-height: 38px;
       border: 1px solid var(--line);
+      border-radius: 7px;
       background: var(--panel);
       color: var(--ink);
-      border-radius: 7px;
-      min-height: 38px;
-      padding: 0 12px;
+      padding: 0 13px;
       cursor: pointer;
     }
 
     button:hover { border-color: var(--accent); }
+    button:disabled { opacity: .52; cursor: not-allowed; }
     button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    button.warn { color: var(--accent-2); }
-    button:disabled { opacity: .55; cursor: wait; }
+    button.primary:hover { background: var(--accent-dark); }
+    button.ghost { background: transparent; }
+    button.warn { color: var(--red); }
+    button.tab.active, button.nav.active {
+      border-color: rgba(15, 118, 110, .36);
+      background: #e9f7f4;
+      color: var(--accent-dark);
+    }
 
-    input {
+    input, select {
       width: 100%;
       min-height: 42px;
       border: 1px solid var(--line);
       border-radius: 7px;
-      padding: 0 12px;
       background: #fff;
       color: var(--ink);
+      padding: 0 12px;
       outline: none;
     }
 
-    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(25, 114, 120, .12); }
+    input:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, .12);
+    }
 
-    .app {
+    .shell {
       display: grid;
-      grid-template-columns: 320px minmax(0, 1fr) 380px;
+      grid-template-rows: auto 1fr;
       height: 100vh;
       overflow: hidden;
     }
 
-    .app.left-collapsed {
-      grid-template-columns: 0 minmax(0, 1fr) 380px;
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 13px 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .9);
+      backdrop-filter: blur(12px);
+      z-index: 2;
     }
 
-    .app.right-collapsed {
-      grid-template-columns: 320px minmax(0, 1fr) 0;
-    }
-
-    .app.left-collapsed.right-collapsed {
-      grid-template-columns: 0 minmax(0, 1fr) 0;
-    }
-
-    .sidebar, .inspector {
-      background: #fbfbf7;
-      border-right: 1px solid var(--line);
-      padding: 18px;
-      overflow: auto;
-      height: 100vh;
-    }
-
-    .app.left-collapsed .sidebar,
-    .app.right-collapsed .inspector {
-      padding: 0;
-      border: 0;
-      overflow: hidden;
-    }
-
-    .inspector {
-      border-right: 0;
-      border-left: 1px solid var(--line);
-    }
-
-    .main {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      min-width: 0;
-      height: 100vh;
-      overflow: hidden;
-    }
+    .shell.auth-mode .header-actions { display: none; }
 
     .brand {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 18px;
+      gap: 11px;
+      min-width: 240px;
     }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      display: grid;
+      place-items: center;
+      background: #15202b;
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.15;
+    }
+
+    .brand span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .session-pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+
+    .content {
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .view {
+      min-height: calc(100vh - 62px);
+      padding: 22px;
+    }
+
+    .hidden { display: none !important; }
+    .view.hidden { display: none; }
+
+    .auth-view {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .auth-card {
+      width: min(520px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 22px;
+    }
+
+    .auth-card h2 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+
+    .auth-card p {
+      margin: 8px 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .page {
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .page-title {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .page-title h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.15;
+      overflow-wrap: anywhere;
+    }
+
+    .page-title p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      max-width: 760px;
+    }
+
+    .summary-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .metric-tile, .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .metric-tile {
+      padding: 14px;
+      min-height: 78px;
+    }
+
+    .metric-tile strong {
+      display: block;
+      font-size: 23px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .metric-tile span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .home-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 420px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      padding: 16px;
+    }
+
+    .panel + .panel { margin-top: 16px; }
 
     .panel-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: 12px;
       margin-bottom: 12px;
     }
 
-    .brand h1 {
-      font-size: 18px;
-      line-height: 1.2;
+    .panel-header h3 {
       margin: 0;
-      font-weight: 760;
+      font-size: 15px;
+      line-height: 1.2;
     }
 
-    .badge {
-      border: 1px solid var(--line);
-      color: var(--accent-3);
-      background: #fff;
-      border-radius: 999px;
-      padding: 4px 8px;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .section { margin: 20px 0; }
-    .section h2 {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0;
+    .panel-header span {
       color: var(--muted);
-      margin: 0 0 10px;
+      font-size: 12px;
     }
 
-    .index-form {
+    .form-stack {
       display: grid;
       gap: 10px;
     }
 
+    .split-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .repo-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .progress-panel {
+      min-height: 116px;
+      border: 1px solid #c7d2fe;
+      background: #f8faff;
+    }
+
+    .task-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .task-top strong {
+      overflow-wrap: anywhere;
+    }
+
     .progress {
-      height: 8px;
-      border: 1px solid var(--line);
-      background: #fff;
+      height: 10px;
       border-radius: 999px;
+      border: 1px solid #bfd3ff;
+      background: #fff;
       overflow: hidden;
-      margin-top: 10px;
     }
 
     .progress span {
       display: block;
       height: 100%;
       width: 0;
-      background: var(--accent);
+      background: linear-gradient(90deg, var(--blue), var(--accent));
       transition: width .2s ease;
     }
 
-    .status {
+    .status-line {
       color: var(--muted);
       font-size: 13px;
-      line-height: 1.4;
       margin-top: 8px;
-      min-height: 38px;
+      min-height: 20px;
     }
 
-    .repo-list, .suggestions, .file-list, .risk-list, .source-list {
+    .repo-list, .file-list, .source-list, .risk-list, .suggestion-list, .breakdown-grid, .detail-grid {
       display: grid;
       gap: 8px;
     }
 
-    .repo-item, .suggestion, .file-item, .risk-item, .source-item {
-      width: 100%;
-      text-align: left;
-      background: var(--panel);
+    .repo-card, .file-item, .source-item, .risk-item, .suggestion, .detail-card {
       border: 1px solid var(--line);
-      border-radius: 7px;
+      border-radius: 8px;
+      background: var(--panel);
       padding: 10px;
       min-height: auto;
+      text-align: left;
     }
 
-    .repo-item strong, .file-item strong {
+    .repo-card.active {
+      border-color: rgba(15, 118, 110, .55);
+      background: #f0fbf9;
+    }
+
+    .repo-title {
       display: block;
       font-size: 13px;
+      font-weight: 750;
       overflow-wrap: anywhere;
     }
 
-    .repo-item span, .file-item span, .risk-item span, .source-item span {
+    .repo-meta, .repo-description, .file-item span, .source-item span, .risk-item span {
       display: block;
       color: var(--muted);
       font-size: 12px;
-      margin-top: 3px;
+      margin-top: 4px;
+      line-height: 1.45;
     }
 
-    .topbar {
-      border-bottom: 1px solid var(--line);
-      padding: 16px 20px;
-      background: rgba(255, 255, 255, .75);
-      backdrop-filter: blur(10px);
-    }
-
-    .topbar-title {
+    .repo-card-actions {
       display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      align-items: center;
-    }
-
-    .topbar-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
       flex-wrap: wrap;
-      justify-content: flex-end;
+      gap: 6px;
+      margin-top: 9px;
     }
 
-    .topbar h2 {
+    .repo-card-actions button {
+      min-height: 32px;
+      font-size: 12px;
+      padding: 0 10px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel-soft);
+      color: var(--muted);
+      font-size: 12px;
+      padding: 2px 8px;
+      white-space: nowrap;
+    }
+
+    .pill.ready { color: var(--green); border-color: rgba(21, 128, 61, .28); background: #effaf2; }
+    .pill.indexing, .pill.queued { color: var(--amber); border-color: rgba(183, 121, 31, .28); background: #fff8e8; }
+    .pill.failed { color: var(--red); border-color: rgba(180, 35, 24, .25); background: #fff1f0; }
+
+    .breakdown-layout {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .breakdown-side {
+      position: sticky;
+      top: 16px;
+    }
+
+    .repo-facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .breakdown-main {
+      min-width: 0;
+    }
+
+    .detail-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-bottom: 16px;
+    }
+
+    .detail-card h4 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .detail-card p, .detail-card ul {
+      margin: 0;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.48;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-card ul {
+      padding-left: 18px;
+    }
+
+    .wide-card {
+      grid-column: span 2;
+    }
+
+    .file-panel {
+      max-height: 680px;
+      overflow: auto;
+    }
+
+    .file-filter {
+      margin-bottom: 10px;
+    }
+
+    .empty {
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.45;
+      background: rgba(255, 255, 255, .62);
+    }
+
+    .chat-layout {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 16px;
+      height: calc(100vh - 108px);
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .chat-side, .chat-main {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      min-height: 0;
+    }
+
+    .chat-side {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      overflow: hidden;
+    }
+
+    .chat-side-header {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .chat-side-header h3 {
+      margin: 0;
+      font-size: 15px;
+      overflow-wrap: anywhere;
+    }
+
+    .chat-side-header span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .side-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-soft);
+    }
+
+    .side-tabs button {
+      min-height: 34px;
+      padding: 0 6px;
+      font-size: 12px;
+    }
+
+    .side-content {
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .chat-main {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+    }
+
+    .chat-topbar {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .chat-topbar h2 {
       margin: 0;
       font-size: 18px;
       overflow-wrap: anywhere;
     }
 
-    .metrics {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .metric {
-      background: var(--soft);
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      padding: 7px 9px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .risk-panel {
-      display: none;
-      margin-top: 12px;
-      border: 1px solid #efc9c4;
-      background: #fff8f6;
-      border-radius: 8px;
-      max-height: 220px;
-      overflow: auto;
-      padding: 10px;
-    }
-
-    .risk-panel.active {
-      display: grid;
-      gap: 8px;
-    }
-
-    .risk-panel .empty {
-      background: #fff;
-    }
-
-    .risk-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      font-size: 13px;
-      color: var(--accent-2);
-      font-weight: 700;
-    }
-
-    .icon-button {
-      width: 30px;
-      min-height: 30px;
-      padding: 0;
-      display: inline-grid;
-      place-items: center;
-      border-radius: 7px;
-      font-size: 18px;
-      line-height: 1;
-    }
-
-    .sidebar-toggle {
-      width: 34px;
-      min-height: 34px;
-    }
-
     .messages {
-      padding: 20px;
+      padding: 18px;
       overflow: auto;
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
+      background: #fbfcfd;
     }
 
     .message {
-      max-width: 860px;
+      max-width: 880px;
       border: 1px solid var(--line);
-      background: var(--panel);
       border-radius: 8px;
-      padding: 14px;
+      background: #fff;
+      padding: 13px;
       line-height: 1.5;
       white-space: pre-wrap;
     }
 
     .message.user {
       align-self: flex-end;
-      background: #eef1fb;
-      border-color: #d3d9ef;
+      background: #eef4ff;
+      border-color: #cfe0ff;
     }
 
     .message.system {
@@ -332,8 +591,8 @@
 
     .message-meta {
       display: flex;
-      gap: 8px;
       flex-wrap: wrap;
+      gap: 8px;
       margin-bottom: 8px;
       color: var(--muted);
       font-size: 12px;
@@ -343,9 +602,9 @@
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 10px;
-      padding: 16px 20px;
+      padding: 14px;
       border-top: 1px solid var(--line);
-      background: #fbfbf7;
+      background: #fff;
     }
 
     pre {
@@ -353,144 +612,417 @@
       background: var(--code);
       color: var(--code-text);
       border-radius: 7px;
-      padding: 12px;
+      padding: 10px;
       overflow: auto;
       line-height: 1.45;
       font-size: 12px;
-      max-height: 320px;
+      max-height: 260px;
     }
 
-    .empty {
-      color: var(--muted);
-      border: 1px dashed var(--line);
-      border-radius: 8px;
-      padding: 12px;
-      font-size: 13px;
-      line-height: 1.45;
-    }
-
-    @media (max-width: 1120px) {
-      .app { grid-template-columns: 280px 1fr; }
-      .inspector { display: none; }
-    }
-
-    @media (max-width: 760px) {
+    @media (max-width: 1100px) {
       body { overflow: auto; }
-      .app { display: block; }
-      .sidebar, .inspector { border: 0; border-bottom: 1px solid var(--line); max-height: none; height: auto; }
-      .main { min-height: 70vh; }
-      .chat-form { grid-template-columns: 1fr; }
+      .shell { min-height: 100vh; height: auto; }
+      .content { overflow: visible; }
+      .summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .home-layout, .breakdown-layout, .chat-layout { grid-template-columns: 1fr; height: auto; }
+      .breakdown-side { position: static; }
+      .chat-main { min-height: 68vh; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .wide-card { grid-column: auto; }
+    }
+
+    @media (max-width: 700px) {
+      .app-header { align-items: flex-start; flex-direction: column; }
+      .header-actions { justify-content: flex-start; }
+      .view { padding: 14px; }
+      .summary-strip { grid-template-columns: 1fr; }
+      .split-row, .chat-form { grid-template-columns: 1fr; }
+      .page-title { display: block; }
     }
   </style>
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar">
+  <div id="shell" class="shell auth-mode">
+    <header class="app-header">
       <div class="brand">
-        <h1>Chat With Your Codebase</h1>
-        <span id="modeBadge" class="badge">RAG</span>
+        <div class="brand-mark">R</div>
+        <div>
+          <h1>Chat With Your Codebase</h1>
+          <span id="modeBadge">RAG</span>
+        </div>
       </div>
-
-      <form id="indexForm" class="index-form">
-        <input id="repoUrl" placeholder="https://github.com/user/repo" autocomplete="off">
-        <button class="primary" type="submit">Index Repo</button>
-      </form>
-      <div class="progress"><span id="progressBar"></span></div>
-      <div id="status" class="status">No repository selected.</div>
-
-      <div class="section">
-        <h2>Repos</h2>
-        <div id="repoList" class="repo-list"></div>
+      <div class="header-actions">
+        <button id="homeButton" class="nav active" type="button">Home</button>
+        <button id="breakdownNavButton" class="nav" type="button" disabled>Repo Breakdown</button>
+        <button id="chatNavButton" class="nav" type="button" disabled>Chat</button>
+        <span id="sessionStatus" class="session-pill">Offline</span>
+        <button id="changeAuthButton" type="button">Account</button>
       </div>
+    </header>
 
-      <div class="section">
-        <h2>Suggestions</h2>
-        <div id="suggestions" class="suggestions"></div>
-      </div>
-    </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <div class="topbar-title">
-          <h2 id="repoTitle">Choose a repo</h2>
-          <div class="topbar-actions">
-            <button id="leftToggle" class="icon-button sidebar-toggle" type="button" title="Toggle left sidebar">☰</button>
-            <button id="rightToggle" class="icon-button sidebar-toggle" type="button" title="Toggle right sidebar">▣</button>
-            <button id="riskButton" class="warn" type="button">Scan Risks</button>
+    <div class="content">
+      <section id="authView" class="view auth-view">
+        <div class="auth-card">
+          <h2>Connect GitHub Account</h2>
+          <p>Paste a GitHub profile link to load that account's public repositories. You can also continue without connecting and paste a repo URL on the next screen.</p>
+          <div class="form-stack">
+            <input id="githubAccountLink" type="text" placeholder="https://github.com/username" autocomplete="off">
+            <button id="connectGithub" class="primary" type="button">Connect Account</button>
+            <button id="continueWithoutLogin" type="button">Continue Without Login</button>
+            <div id="authStatus" class="status-line">Only public repositories are loaded from a profile link.</div>
           </div>
         </div>
-        <div id="metrics" class="metrics"></div>
-        <div id="risks" class="risk-panel"></div>
-      </header>
-
-      <section id="messages" class="messages">
-        <div class="message system">Index a public GitHub repository, then ask questions about files, flows, architecture, or risky code.</div>
       </section>
 
-      <form id="chatForm" class="chat-form">
-        <input id="question" placeholder="Ask about this codebase..." autocomplete="off">
-        <button class="primary" type="submit">Ask</button>
-      </form>
-    </main>
+      <section id="homeView" class="view hidden">
+        <div class="page">
+          <div class="page-title">
+            <div>
+              <h2>Home</h2>
+              <p>Choose a repository, index it, then open the repo breakdown or chat when indexing is complete.</p>
+            </div>
+          </div>
 
-    <aside class="inspector">
-      <div class="panel-header">
-        <h2>Inspector</h2>
-        <button id="rightClose" class="icon-button" type="button" title="Close inspector">×</button>
-      </div>
-      <div class="section">
-        <h2>Architecture</h2>
-        <div id="architecture" class="empty">No architecture summary yet.</div>
-      </div>
+          <div id="homeMetrics" class="summary-strip"></div>
 
-      <div class="section">
-        <h2>Sources</h2>
-        <div id="sources" class="source-list"></div>
-      </div>
+          <div class="home-layout">
+            <main>
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Enter or Choose Repository</h3>
+                    <span id="repoChooserHint">Paste a public GitHub URL or choose one from your GitHub account.</span>
+                  </div>
+                </div>
+                <form id="indexForm" class="form-stack">
+                  <select id="repoSelect" class="hidden">
+                    <option value="">Choose from GitHub repositories...</option>
+                  </select>
+                  <input id="repoUrl" list="repoOptions" placeholder="https://github.com/user/repo" autocomplete="off">
+                  <datalist id="repoOptions"></datalist>
+                  <div class="repo-actions">
+                    <button class="primary" type="submit">Index Repository</button>
+                    <button id="openBreakdownButton" type="button" disabled>Repo Breakdown</button>
+                    <button id="openChatButton" type="button" disabled>Chat</button>
+                  </div>
+                </form>
+              </section>
 
-      <div class="section">
-        <h2>Files</h2>
-        <div id="files" class="file-list"></div>
-      </div>
-    </aside>
+              <section class="panel progress-panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Indexing Progress</h3>
+                    <span>Cloning, chunking, embeddings, and architecture analysis</span>
+                  </div>
+                  <span id="taskProgressText" class="pill">Idle</span>
+                </div>
+                <div class="task-top">
+                  <strong id="taskTitle">No active indexing job</strong>
+                </div>
+                <div class="progress"><span id="progressBar"></span></div>
+                <div id="taskStatus" class="status-line">Start indexing to see progress here.</div>
+              </section>
+
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Selected Repository</h3>
+                    <span>Current working context</span>
+                  </div>
+                </div>
+                <div id="selectedRepoSummary" class="empty">No repository selected yet.</div>
+              </section>
+            </main>
+
+            <aside>
+              <section class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Existing Repositories</h3>
+                    <span id="connectedCount">0 indexed</span>
+                  </div>
+                </div>
+                <div id="repoList" class="repo-list"></div>
+              </section>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="breakdownView" class="view hidden">
+        <div class="breakdown-layout">
+          <aside class="breakdown-side">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3 id="breakdownRepoTitle">Repo Breakdown</h3>
+                  <span id="breakdownRepoMeta">No repository selected</span>
+                </div>
+              </div>
+              <div id="breakdownMetrics" class="repo-facts"></div>
+              <div class="repo-actions">
+                <button id="breakdownChatButton" class="primary" type="button">Chat</button>
+                <button id="breakdownHomeButton" type="button">Home</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Suggestions</h3>
+                  <span>Good first questions</span>
+                </div>
+              </div>
+              <div id="breakdownSuggestions" class="suggestion-list"></div>
+            </section>
+          </aside>
+
+          <main class="breakdown-main">
+            <div class="page-title">
+              <div>
+                <h2 id="breakdownHeading">Repository Breakdown</h2>
+                <p id="breakdownSubheading">Architecture and file inventory appear after indexing.</p>
+              </div>
+            </div>
+
+            <section class="detail-grid" id="architectureDetails"></section>
+
+            <section class="panel file-panel">
+              <div class="panel-header">
+                <div>
+                  <h3>File View</h3>
+                  <span id="fileCountLabel">0 files</span>
+                </div>
+              </div>
+              <input id="fileFilter" class="file-filter" placeholder="Filter files..." autocomplete="off">
+              <div id="files" class="file-list"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Risk Scan</h3>
+                  <span>Simple signals from indexed source files</span>
+                </div>
+                <button id="riskButton" class="warn" type="button">Scan Risks</button>
+              </div>
+              <div id="risks" class="risk-list"></div>
+            </section>
+          </main>
+        </div>
+      </section>
+
+      <section id="chatView" class="view hidden">
+        <div class="chat-layout">
+          <aside class="chat-side">
+            <div class="chat-side-header">
+              <h3 id="chatSideTitle">No repo selected</h3>
+              <span id="chatSideMeta">Open a ready repository first</span>
+            </div>
+            <div class="side-tabs">
+              <button class="tab active" data-side="suggestions" type="button">Ask</button>
+              <button class="tab" data-side="breakdown" type="button">Breakdown</button>
+              <button class="tab" data-side="files" type="button">Files</button>
+              <button class="tab" data-side="sources" type="button">Sources</button>
+            </div>
+            <div id="chatSideContent" class="side-content"></div>
+          </aside>
+
+          <main class="chat-main">
+            <header class="chat-topbar">
+              <div>
+                <h2 id="chatRepoTitle">Chat</h2>
+                <span id="chatRepoMeta" class="repo-meta">Ask source-grounded questions after indexing.</span>
+              </div>
+              <button id="backToBreakdown" type="button">Repo Breakdown</button>
+            </header>
+            <section id="messages" class="messages"></section>
+            <form id="chatForm" class="chat-form">
+              <input id="question" placeholder="Ask about architecture, files, routes, setup, or risks..." autocomplete="off">
+              <button class="primary" type="submit">Ask</button>
+            </form>
+          </main>
+        </div>
+      </section>
+    </div>
   </div>
 
   <script>
     const state = {
       repoId: null,
+      currentRepo: null,
+      repos: [],
+      githubRepos: [],
+      githubUser: null,
+      githubAccountLink: sessionStorage.getItem("github_account_link") || "",
+      authGatePassed: sessionStorage.getItem("auth_gate_passed") === "true",
+      files: [],
+      answerSources: [],
+      selectedGithubRepo: null,
       polling: null,
-      repos: []
+      view: "auth",
+      sideView: "suggestions"
     };
 
     const $ = (id) => document.getElementById(id);
 
-    function togglePanel(side, force) {
-      const app = document.querySelector(".app");
-      const cls = side === "left" ? "left-collapsed" : "right-collapsed";
-      const shouldCollapse = typeof force === "boolean" ? force : !app.classList.contains(cls);
-      app.classList.toggle(cls, shouldCollapse);
-      $("leftToggle").textContent = app.classList.contains("left-collapsed") ? "☰" : "‹";
-      $("rightToggle").textContent = app.classList.contains("right-collapsed") ? "▣" : "›";
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
     }
 
     function api(path, options = {}) {
-      return fetch(path, {
-        headers: { "Content-Type": "application/json" },
-        ...options
-      }).then(async (response) => {
+      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+      return fetch(path, { ...options, headers }).then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "Request failed");
         return data;
       });
     }
 
-    function setStatus(text, progress = 0) {
-      $("status").textContent = text;
-      $("progressBar").style.width = `${progress}%`;
+    function repoName(url, fallback = "") {
+      return String(fallback || url || "")
+        .replace(/^https:\/\/github\.com\//, "")
+        .replace(/^git@github\.com:/, "")
+        .replace(/\.git$/, "")
+        .replace(/\/$/, "") || "Repository";
     }
 
-    function repoName(url) {
-      return url.replace("https://github.com/", "").replace("git@github.com:", "").replace(".git", "");
+    function repoDisplayName(repo) {
+      return repo?.repo_full_name || repoName(repo?.github_url);
+    }
+
+    function statusClass(status) {
+      return ["ready", "indexing", "queued", "failed"].includes(status) ? status : "";
+    }
+
+    function setView(view) {
+      state.view = view;
+      $("shell").classList.toggle("auth-mode", view === "auth");
+      $("authView").classList.toggle("hidden", view !== "auth");
+      $("homeView").classList.toggle("hidden", view !== "home");
+      $("breakdownView").classList.toggle("hidden", view !== "breakdown");
+      $("chatView").classList.toggle("hidden", view !== "chat");
+      $("homeButton").classList.toggle("active", view === "home");
+      $("breakdownNavButton").classList.toggle("active", view === "breakdown");
+      $("chatNavButton").classList.toggle("active", view === "chat");
+      renderChatSide();
+    }
+
+    function goHome() {
+      setView("home");
+      renderHome();
+    }
+
+    function requireReadyView(view) {
+      if (state.currentRepo?.status !== "ready") return;
+      setView(view);
+    }
+
+    function clearRepoDetails() {
+      state.files = [];
+      state.answerSources = [];
+      $("selectedRepoSummary").innerHTML = '<div class="empty">No repository selected yet.</div>';
+      $("breakdownRepoTitle").textContent = "Repo Breakdown";
+      $("breakdownRepoMeta").textContent = "No repository selected";
+      $("breakdownHeading").textContent = "Repository Breakdown";
+      $("breakdownSubheading").textContent = "Architecture and file inventory appear after indexing.";
+      $("breakdownMetrics").innerHTML = "";
+      $("breakdownSuggestions").innerHTML = '<div class="empty">Suggestions appear after indexing.</div>';
+      $("architectureDetails").innerHTML = '<div class="empty">Repo breakdown appears after indexing.</div>';
+      $("files").innerHTML = '<div class="empty">No files loaded for this project.</div>';
+      $("fileCountLabel").textContent = "0 files";
+      $("risks").innerHTML = '<div class="empty">Run a scan after indexing completes.</div>';
+      $("breakdownNavButton").disabled = true;
+      $("chatNavButton").disabled = true;
+      $("openBreakdownButton").disabled = true;
+      $("openChatButton").disabled = true;
+      $("breakdownChatButton").disabled = true;
+      $("question").disabled = true;
+      $("chatForm").querySelector("button").disabled = true;
+      $("chatSideTitle").textContent = "No repo selected";
+      $("chatSideMeta").textContent = "Open a ready repository first";
+      $("chatRepoTitle").textContent = "Chat";
+      $("chatRepoMeta").textContent = "Ask source-grounded questions after indexing.";
+      renderChatSide();
+    }
+
+    function resetChat() {
+      $("messages").innerHTML = "";
+      addMessage("Open a ready repository, then ask about architecture, setup, files, routes, risks, or data flow.", "system");
+      state.answerSources = [];
+      renderChatSide();
+    }
+
+    function renderHome() {
+      renderHomeMetrics();
+      renderRepos();
+      renderGithubOptions();
+      renderSelectedRepo();
+      renderSession();
+    }
+
+    function renderSession() {
+      if (state.githubUser) {
+        $("sessionStatus").textContent = `Connected: ${state.githubUser.login}`;
+        $("changeAuthButton").textContent = "Sign out";
+      } else {
+        $("sessionStatus").textContent = "No account connected";
+        $("changeAuthButton").textContent = "Login";
+      }
+    }
+
+    function renderHomeMetrics() {
+      const ready = state.repos.filter((repo) => repo.status === "ready");
+      const files = ready.reduce((sum, repo) => sum + (repo.file_count || 0), 0);
+      const chunks = ready.reduce((sum, repo) => sum + (repo.chunk_count || 0), 0);
+      const metrics = [
+        [state.repos.length, "existing repos"],
+        [ready.length, "ready to chat"],
+        [files, "indexed files"],
+        [chunks, "search chunks"]
+      ];
+      $("homeMetrics").innerHTML = metrics.map(([value, label]) => (
+        `<div class="metric-tile"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`
+      )).join("");
+      $("connectedCount").textContent = `${state.repos.length} indexed`;
+    }
+
+    function renderGithubOptions() {
+      const select = $("repoSelect");
+      const options = $("repoOptions");
+      select.innerHTML = '<option value="">Choose from GitHub repositories...</option>';
+      options.innerHTML = "";
+      if (!state.githubRepos.length) {
+        select.classList.add("hidden");
+        $("repoChooserHint").textContent = "Paste a public GitHub URL.";
+        return;
+      }
+      select.classList.remove("hidden");
+      $("repoChooserHint").textContent = `${state.githubRepos.length} GitHub repos loaded. Choose one or paste a URL.`;
+      state.githubRepos.forEach((repo) => {
+        const option = document.createElement("option");
+        option.value = repo.clone_url || repo.github_url;
+        option.textContent = `${repo.full_name}${repo.private ? " (private)" : ""}`;
+        select.appendChild(option);
+
+        const dataOption = document.createElement("option");
+        dataOption.value = repo.clone_url || repo.github_url;
+        dataOption.label = repo.full_name;
+        options.appendChild(dataOption);
+      });
+    }
+
+    function findGithubRepo(value) {
+      return state.githubRepos.find((repo) => (
+        repo.clone_url === value ||
+        repo.github_url === value ||
+        repo.full_name === value ||
+        repoName(repo.github_url) === value
+      )) || null;
     }
 
     function renderRepos() {
@@ -501,71 +1033,262 @@
         return;
       }
       state.repos.forEach((repo) => {
-        const button = document.createElement("button");
-        button.className = "repo-item";
-        button.innerHTML = `<strong>${repoName(repo.github_url)}</strong><span>${repo.status} - ${repo.file_count || 0} files - ${repo.chunk_count || 0} chunks</span>`;
-        button.onclick = () => selectRepo(repo.repo_id);
-        box.appendChild(button);
+        const item = document.createElement("div");
+        item.className = `repo-card ${state.repoId === repo.repo_id ? "active" : ""}`;
+        const description = repo.repo_description || repo.message || "No description saved for this repo.";
+        item.innerHTML = `
+          <span class="repo-title">${escapeHtml(repoDisplayName(repo))}</span>
+          <span class="repo-meta"><span class="pill ${statusClass(repo.status)}">${escapeHtml(repo.status)}</span> ${repo.file_count || 0} files - ${repo.chunk_count || 0} chunks</span>
+          <span class="repo-description">${escapeHtml(description)}</span>
+        `;
+        const actions = document.createElement("div");
+        actions.className = "repo-card-actions";
+        const breakdown = document.createElement("button");
+        breakdown.type = "button";
+        breakdown.textContent = "View Breakdown";
+        breakdown.disabled = repo.status !== "ready";
+        breakdown.onclick = () => selectRepo(repo.repo_id, "breakdown");
+        const chat = document.createElement("button");
+        chat.type = "button";
+        chat.className = "primary";
+        chat.textContent = "Chat With It";
+        chat.disabled = repo.status !== "ready";
+        chat.onclick = () => selectRepo(repo.repo_id, "chat");
+        actions.appendChild(breakdown);
+        actions.appendChild(chat);
+        item.appendChild(actions);
+        box.appendChild(item);
       });
+    }
+
+    function renderTask(repo) {
+      if (!repo) {
+        $("taskTitle").textContent = "No active indexing job";
+        $("taskProgressText").textContent = "Idle";
+        $("taskProgressText").className = "pill";
+        $("progressBar").style.width = "0%";
+        $("taskStatus").textContent = "Start indexing to see progress here.";
+        return;
+      }
+      const progress = Math.max(0, Math.min(100, repo.progress || 0));
+      $("taskTitle").textContent = repoName(repo.github_url, repo.repo_full_name);
+      $("taskProgressText").textContent = `${progress}%`;
+      $("taskProgressText").className = `pill ${statusClass(repo.status)}`;
+      $("progressBar").style.width = `${progress}%`;
+      $("taskStatus").textContent = `${repo.status}: ${repo.message || ""}`;
+    }
+
+    function renderSelectedRepo() {
+      const repo = state.currentRepo;
+      if (!repo) {
+        $("selectedRepoSummary").innerHTML = '<div class="empty">No repository selected yet.</div>';
+        return;
+      }
+      const description = repo.repo_description || "No description saved.";
+      $("selectedRepoSummary").innerHTML = `
+        <span class="repo-title">${escapeHtml(repoDisplayName(repo))}</span>
+        <span class="repo-meta">${escapeHtml(repo.status)} - ${repo.file_count || 0} files - ${repo.chunk_count || 0} chunks</span>
+        <span class="repo-description">${escapeHtml(description)}</span>
+      `;
     }
 
     function renderRepo(repo) {
+      state.currentRepo = repo;
       state.repoId = repo.repo_id;
-      $("repoTitle").textContent = repoName(repo.github_url);
-      setStatus(`${repo.status}: ${repo.message || ""}`, repo.progress || 0);
-      renderMetrics(repo);
+      const ready = repo.status === "ready";
+      $("breakdownNavButton").disabled = !ready;
+      $("chatNavButton").disabled = !ready;
+      $("openBreakdownButton").disabled = !ready;
+      $("openChatButton").disabled = !ready;
+      $("breakdownChatButton").disabled = !ready;
+      $("question").disabled = !ready;
+      $("chatForm").querySelector("button").disabled = !ready;
+
+      renderTask(ready ? null : repo);
+      renderSelectedRepo();
+      renderRepos();
+
+      $("breakdownRepoTitle").textContent = repoDisplayName(repo);
+      $("breakdownRepoMeta").textContent = `${repo.status} - ${repo.file_count || 0} files - ${repo.chunk_count || 0} chunks`;
+      $("breakdownHeading").textContent = repoDisplayName(repo);
+      $("breakdownSubheading").textContent = ready
+        ? (repo.repo_description || "Architecture, files, risks, and chat are ready.")
+        : repo.message || "Indexing is still running.";
+      $("chatSideTitle").textContent = repoDisplayName(repo);
+      $("chatSideMeta").textContent = `${repo.file_count || 0} files - ${repo.chunk_count || 0} chunks`;
+      $("chatRepoTitle").textContent = repoDisplayName(repo);
+      $("chatRepoMeta").textContent = ready ? "Source-grounded chat is ready." : "Chat unlocks after indexing.";
+
+      renderBreakdownMetrics(repo);
       renderArchitecture(repo);
       renderSuggestions(repo.suggestions || []);
-      if (repo.status === "ready") loadSources(repo.repo_id);
+      if (!ready) {
+        state.files = [];
+        state.answerSources = [];
+        $("files").innerHTML = '<div class="empty">Files will appear after indexing completes.</div>';
+        $("fileCountLabel").textContent = "0 files";
+        $("risks").innerHTML = '<div class="empty">Run a scan after indexing completes.</div>';
+        renderChatSide();
+      }
     }
 
-    function renderMetrics(repo) {
-      const metrics = $("metrics");
+    function renderBreakdownMetrics(repo) {
       const frameworks = repo.architecture?.frameworks?.join(", ") || "Detecting";
-      metrics.innerHTML = [
+      const items = [
         `${repo.file_count || 0} files`,
         `${repo.chunk_count || 0} chunks`,
-        `${repo.status}`,
+        repo.status,
         frameworks
-      ].map((item) => `<span class="metric">${item}</span>`).join("");
+      ];
+      $("breakdownMetrics").innerHTML = items.map((item) => `<span class="pill ${statusClass(item)}">${escapeHtml(item)}</span>`).join("");
+    }
+
+    function compactList(items, mapper, emptyText, limit = 6) {
+      const mapped = (items || []).slice(0, limit).map(mapper).filter(Boolean);
+      return mapped.length ? mapped : [emptyText];
+    }
+
+    function listHtml(items) {
+      return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
     }
 
     function renderArchitecture(repo) {
-      const box = $("architecture");
-      if (!repo.architecture) {
-        box.className = "empty";
-        box.textContent = "No architecture summary yet.";
+      const architecture = repo.architecture;
+      if (!architecture) {
+        $("architectureDetails").innerHTML = '<div class="empty">Repo breakdown appears after indexing.</div>';
+        renderChatSide();
         return;
       }
-      box.className = "";
-      const languages = repo.architecture.languages.slice(0, 6).map((item) => `${item.name}: ${item.files}`).join("<br>");
-      const folders = repo.architecture.top_folders.slice(0, 6).map((item) => `${item.name}: ${item.files}`).join("<br>");
-      const usefulEntrypoints = repo.architecture.entrypoints.filter((path) => {
-        const name = path.split(/[\\/]/).pop();
-        return !["requirements.txt", "package.json", "README.md", "README.MD"].includes(name);
-      });
-      const entrypoints = (usefulEntrypoints.length ? usefulEntrypoints : repo.architecture.entrypoints).slice(0, 6).join("<br>") || "No standard entrypoints found";
-      const onboarding = (repo.onboarding || []).map((item) => `<p>${item}</p>`).join("");
-      box.innerHTML = `${onboarding}<h2>Languages</h2>${languages}<h2>Folders</h2>${folders}<h2>Entrypoints</h2>${entrypoints}`;
+
+      const facts = architecture.code_facts || {};
+      const languages = compactList(architecture.languages, (item) => `${item.name}: ${item.files}`, "No languages detected", 8);
+      const folders = compactList(architecture.top_folders, (item) => `${item.name}: ${item.files} files`, "Repo root", 8);
+      const entrypoints = compactList(architecture.entrypoints, (path) => path, "No standard entrypoint found", 8);
+      const routes = compactList(facts.routes, (route) => `${route.methods?.join(",") || "HTTP"} ${route.path} -> ${route.function}`, "No routes detected", 8);
+      const symbols = compactList(facts.symbols, (item) => `${item.name} in ${item.file_path}`, "No major symbols detected", 10);
+      const largest = compactList(architecture.largest_files, (item) => `${item.file_path}: ${item.lines} lines`, "No large files detected", 8);
+      const frameworks = (architecture.frameworks || []).join(", ") || "No framework signals detected";
+      const description = repo.repo_description || `Indexed ${repo.file_count || 0} files into ${repo.chunk_count || 0} searchable chunks.`;
+
+      $("architectureDetails").innerHTML = `
+        <div class="detail-card wide-card"><h4>Repository Summary</h4><p>${escapeHtml(description)}</p></div>
+        <div class="detail-card"><h4>Stack Signals</h4><p>${escapeHtml(frameworks)}</p></div>
+        <div class="detail-card"><h4>Languages</h4>${listHtml(languages)}</div>
+        <div class="detail-card"><h4>Top Areas</h4>${listHtml(folders)}</div>
+        <div class="detail-card"><h4>Entrypoints</h4>${listHtml(entrypoints)}</div>
+        <div class="detail-card wide-card"><h4>Routes and Handlers</h4>${listHtml(routes)}</div>
+        <div class="detail-card"><h4>Key Symbols</h4>${listHtml(symbols)}</div>
+        <div class="detail-card"><h4>Large Files</h4>${listHtml(largest)}</div>
+      `;
+      renderChatSide();
     }
 
     function renderSuggestions(items) {
-      const box = $("suggestions");
+      const box = $("breakdownSuggestions");
       box.innerHTML = "";
       if (!items.length) {
         box.innerHTML = '<div class="empty">Suggestions appear after indexing.</div>';
+        renderChatSide();
         return;
       }
-      items.forEach((text) => {
+      items.slice(0, 10).forEach((text) => {
         const button = document.createElement("button");
+        button.type = "button";
         button.className = "suggestion";
         button.textContent = text;
-        button.onclick = () => {
-          $("question").value = text;
-          $("chatForm").requestSubmit();
-        };
+        button.onclick = () => askSuggestion(text);
         box.appendChild(button);
       });
+      renderChatSide();
+    }
+
+    function renderFiles() {
+      const box = $("files");
+      const filter = $("fileFilter").value.trim().toLowerCase();
+      const files = state.files.filter((file) => !filter || file.file_path.toLowerCase().includes(filter));
+      $("fileCountLabel").textContent = `${state.files.length} files`;
+      box.innerHTML = "";
+      if (!state.files.length) {
+        box.innerHTML = '<div class="empty">No files loaded for this project.</div>';
+      } else if (!files.length) {
+        box.innerHTML = '<div class="empty">No files match this filter.</div>';
+      } else {
+        files.slice(0, 300).forEach((file) => {
+          const item = document.createElement("div");
+          item.className = "file-item";
+          item.innerHTML = `<strong>${escapeHtml(file.file_path)}</strong><span>${file.chunks} chunks - ${escapeHtml(file.extension || "text")}</span>`;
+          box.appendChild(item);
+        });
+      }
+      renderChatSide();
+    }
+
+    function renderSources(sources) {
+      state.answerSources = sources || [];
+      renderChatSide();
+    }
+
+    function renderChatSide() {
+      document.querySelectorAll("[data-side]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.side === state.sideView);
+      });
+      const box = $("chatSideContent");
+      if (!box) return;
+      const repo = state.currentRepo;
+      if (!repo || repo.status !== "ready") {
+        box.innerHTML = '<div class="empty">Open a ready repository to view suggestions, breakdown, files, and answer sources.</div>';
+        return;
+      }
+      if (state.sideView === "suggestions") {
+        const suggestions = repo.suggestions || [];
+        box.innerHTML = "";
+        if (!suggestions.length) {
+          box.innerHTML = '<div class="empty">No suggestions available for this repo.</div>';
+          return;
+        }
+        suggestions.forEach((text) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "suggestion";
+          button.textContent = text;
+          button.onclick = () => askSuggestion(text);
+          box.appendChild(button);
+        });
+        return;
+      }
+      if (state.sideView === "breakdown") {
+        const architecture = repo.architecture || {};
+        const frameworks = architecture.frameworks?.join(", ") || "No framework signals";
+        const entrypoints = compactList(architecture.entrypoints, (path) => path, "No standard entrypoints", 5);
+        const folders = compactList(architecture.top_folders, (item) => `${item.name}: ${item.files}`, "Repo root", 5);
+        box.innerHTML = `
+          <div class="detail-card"><h4>Stack</h4><p>${escapeHtml(frameworks)}</p></div>
+          <div class="detail-card"><h4>Entrypoints</h4>${listHtml(entrypoints)}</div>
+          <div class="detail-card"><h4>Folders</h4>${listHtml(folders)}</div>
+        `;
+        return;
+      }
+      if (state.sideView === "files") {
+        if (!state.files.length) {
+          box.innerHTML = '<div class="empty">File list is loading.</div>';
+          return;
+        }
+        box.innerHTML = state.files.slice(0, 120).map((file) => (
+          `<div class="file-item"><strong>${escapeHtml(file.file_path)}</strong><span>${file.chunks} chunks - ${escapeHtml(file.extension || "text")}</span></div>`
+        )).join("");
+        return;
+      }
+      if (!state.answerSources.length) {
+        box.innerHTML = '<div class="empty">Sources from chat answers will appear here.</div>';
+        return;
+      }
+      box.innerHTML = state.answerSources.slice(0, 8).map((source) => (
+        `<div class="source-item">
+          <strong>${escapeHtml(source.file_path)}</strong>
+          <span>lines ${source.start_line}-${source.end_line} - score ${source.score?.toFixed?.(2) || "n/a"}</span>
+          <pre>${escapeHtml(String(source.content || "").slice(0, 1000))}</pre>
+        </div>`
+      )).join("");
     }
 
     function addMessage(text, type = "assistant", meta = "") {
@@ -577,59 +1300,19 @@
       return div;
     }
 
-    function resetWorkspace(repo) {
-      $("messages").innerHTML = "";
-      addMessage(`Selected ${repoName(repo.github_url)}. Ask about architecture, routes, modules, data flow, setup, or risky code.`, "system");
-      $("sources").innerHTML = '<div class="empty">Citations from answers appear here.</div>';
-      const risks = $("risks");
-      risks.classList.remove("active");
-      risks.innerHTML = "";
-    }
-
-    function escapeHtml(text) {
-      return String(text)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
-    }
-
-    function renderSources(sources) {
-      const box = $("sources");
-      box.innerHTML = "";
-      if (!sources?.length) {
-        box.innerHTML = '<div class="empty">Citations from answers appear here.</div>';
-        return;
-      }
-      sources.slice(0, 8).forEach((source) => {
-        const item = document.createElement("div");
-        item.className = "source-item";
-        item.innerHTML = `<strong>${source.file_path}</strong><span>lines ${source.start_line}-${source.end_line} - score ${source.score?.toFixed(2) || "n/a"}</span><pre>${escapeHtml(source.content.slice(0, 1200))}</pre>`;
-        box.appendChild(item);
-      });
-    }
-
-    function closeRisks() {
-      const box = $("risks");
-      box.classList.remove("active");
-      box.innerHTML = "";
-    }
-
     async function loadSources(repoId) {
+      $("files").innerHTML = '<div class="empty">Loading file inventory...</div>';
       const data = await api(`/api/repos/${repoId}/sources`);
-      const files = $("files");
-      files.innerHTML = "";
-      data.files.slice(0, 80).forEach((file) => {
-        const item = document.createElement("div");
-        item.className = "file-item";
-        item.innerHTML = `<strong>${file.file_path}</strong><span>${file.chunks} chunks - ${file.extension || "text"}</span>`;
-        files.appendChild(item);
-      });
-      if (!data.files.length) files.innerHTML = '<div class="empty">No files loaded.</div>';
+      if (state.repoId !== repoId) return;
+      state.files = data.files || [];
+      renderFiles();
     }
 
     async function refreshRepos() {
       state.repos = await api("/api/repos");
+      renderHomeMetrics();
       renderRepos();
+      renderSelectedRepo();
     }
 
     async function renderHealth() {
@@ -650,41 +1333,167 @@
       }
     }
 
-    async function selectRepo(repoId) {
+    async function loadGithub(fromLogin = false) {
+      const accountInput = $("githubAccountLink").value.trim() || state.githubAccountLink;
+      if (!accountInput) {
+        $("authStatus").textContent = "Paste a GitHub account link first.";
+        return false;
+      }
+      state.githubAccountLink = accountInput;
+      sessionStorage.setItem("github_account_link", accountInput);
+      $("authStatus").textContent = "Connecting...";
+      try {
+        const data = await api("/api/github/account", {
+          method: "POST",
+          body: JSON.stringify({ account: accountInput })
+        });
+        state.githubUser = data.user;
+        state.githubRepos = data.repos || [];
+        state.authGatePassed = true;
+        sessionStorage.setItem("auth_gate_passed", "true");
+        $("authStatus").textContent = `Connected to ${state.githubUser.login}.`;
+        renderGithubOptions();
+        renderSession();
+        if (fromLogin) goHome();
+        return true;
+      } catch (error) {
+        state.githubUser = null;
+        state.githubRepos = [];
+        state.githubAccountLink = "";
+        sessionStorage.removeItem("github_account_link");
+        $("authStatus").textContent = error.message;
+        renderGithubOptions();
+        renderSession();
+        return false;
+      }
+    }
+
+    function continueWithoutLogin() {
+      state.authGatePassed = true;
+      sessionStorage.setItem("auth_gate_passed", "true");
+      state.githubUser = null;
+      state.githubRepos = [];
+      renderGithubOptions();
+      renderSession();
+      goHome();
+    }
+
+    function signOutOrLogin() {
+      if (state.githubUser || state.githubAccountLink) {
+        state.githubAccountLink = "";
+        state.githubUser = null;
+        state.githubRepos = [];
+        sessionStorage.removeItem("github_account_link");
+        renderGithubOptions();
+        renderSession();
+        goHome();
+        return;
+      }
+      setView("auth");
+    }
+
+    async function startIndex(githubUrl) {
+      const url = String(githubUrl || $("repoUrl").value).trim();
+      if (!url) return;
+      const selected = state.selectedGithubRepo || findGithubRepo(url);
+      clearInterval(state.polling);
+      state.repoId = null;
+      state.currentRepo = {
+        repo_id: "",
+        github_url: url,
+        repo_full_name: selected?.full_name || "",
+        repo_description: selected?.description || "",
+        status: "queued",
+        message: "Starting index job",
+        progress: 3
+      };
+      state.files = [];
+      state.answerSources = [];
+      state.sideView = "suggestions";
+      clearRepoDetails();
+      resetChat();
+      renderTask(state.currentRepo);
+      renderSelectedRepo();
+      setView("home");
+      try {
+        const data = await api("/api/index", {
+          method: "POST",
+          body: JSON.stringify({
+            github_url: url,
+            repo_full_name: selected?.full_name || "",
+            repo_description: selected?.description || ""
+          })
+        });
+        state.repoId = data.repo_id;
+        await refreshRepos();
+        const repo = await api(`/api/repos/${data.repo_id}`);
+        renderRepo(repo);
+        if (repo.status === "ready") {
+          await loadSources(repo.repo_id);
+          resetChat();
+          setView("breakdown");
+        } else {
+          startPolling(data.repo_id);
+        }
+      } catch (error) {
+        renderTask({ github_url: url, status: "failed", message: error.message, progress: 100 });
+      }
+    }
+
+    async function selectRepo(repoId, targetView = "breakdown") {
+      clearInterval(state.polling);
+      const previousRepoId = state.repoId;
       const repo = await api(`/api/repos/${repoId}`);
-      if (state.repoId !== repoId) resetWorkspace(repo);
+      if (previousRepoId !== repoId) {
+        state.files = [];
+        state.answerSources = [];
+        state.sideView = "suggestions";
+        resetChat();
+      }
       renderRepo(repo);
-      if (repo.status === "indexing" || repo.status === "queued") startPolling(repoId);
+      if (repo.status === "ready") {
+        await loadSources(repoId);
+        setView(targetView);
+      } else {
+        clearRepoDetails();
+        renderRepo(repo);
+        setView("home");
+        startPolling(repoId);
+      }
     }
 
     function startPolling(repoId) {
       clearInterval(state.polling);
       state.polling = setInterval(async () => {
-        const repo = await api(`/api/repos/${repoId}`);
-        renderRepo(repo);
-        await refreshRepos();
-        if (repo.status === "ready" || repo.status === "failed") clearInterval(state.polling);
+        try {
+          const repo = await api(`/api/repos/${repoId}`);
+          renderRepo(repo);
+          await refreshRepos();
+          if (repo.status === "ready") {
+            clearInterval(state.polling);
+            renderTask(null);
+            await loadSources(repoId);
+            resetChat();
+            setView("breakdown");
+          }
+          if (repo.status === "failed") {
+            clearInterval(state.polling);
+          }
+        } catch (error) {
+          clearInterval(state.polling);
+          renderTask({ github_url: state.currentRepo?.github_url || "", status: "failed", message: error.message, progress: 100 });
+        }
       }, 1200);
     }
 
-    $("indexForm").addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const githubUrl = $("repoUrl").value.trim();
-      if (!githubUrl) return;
-      setStatus("Starting index job...", 3);
-      const data = await api("/api/index", {
-        method: "POST",
-        body: JSON.stringify({ github_url: githubUrl })
-      }).catch((error) => {
-        setStatus(error.message, 0);
-      });
-      if (!data) return;
-      state.repoId = data.repo_id;
-      startPolling(data.repo_id);
-      await refreshRepos();
-    });
+    function askSuggestion(text) {
+      if (!state.currentRepo || state.currentRepo.status !== "ready") return;
+      $("question").value = text;
+      setView("chat");
+      $("chatForm").requestSubmit();
+    }
 
-    $("chatForm").addEventListener("submit", async (event) => {
+    async function submitChat(event) {
       event.preventDefault();
       const question = $("question").value.trim();
       if (!question || !state.repoId) return;
@@ -699,49 +1508,88 @@
         pending.remove();
         const modeLabel = data.mode === "llm" ? "LLM" : data.mode === "gemini" ? "Gemini" : data.mode === "ollama" ? "Ollama" : "Free retrieval";
         const warning = data.generation_warning ? `<span>${escapeHtml(data.generation_warning)}</span>` : "";
-        const meta = `<span>${modeLabel}</span><span>confidence: ${data.confidence}</span>${warning}`;
+        const meta = `<span>${modeLabel}</span><span>confidence: ${escapeHtml(data.confidence)}</span>${warning}`;
         addMessage(data.answer, "assistant", meta);
         renderSources(data.sources || []);
+        state.sideView = "sources";
+        renderChatSide();
       } catch (error) {
         pending.textContent = error.message;
       }
-    });
+    }
 
-    $("riskButton").addEventListener("click", async () => {
+    async function scanRisks() {
       if (!state.repoId) return;
       const box = $("risks");
-      box.classList.add("active");
       box.innerHTML = '<div class="empty">Scanning indexed files...</div>';
       try {
         const data = await api(`/api/repos/${state.repoId}/risks`);
-        box.innerHTML = "";
         if (!data.findings.length) {
-          box.innerHTML = '<div class="risk-header"><span>No simple risk signals found.</span><button class="icon-button" type="button" onclick="closeRisks()" title="Close risks">×</button></div>';
+          box.innerHTML = '<div class="empty">No simple risk signals found.</div>';
           return;
         }
-        const header = document.createElement("div");
-        header.className = "risk-header";
-        header.innerHTML = `<span>${data.findings.length} risk signals found</span><button class="icon-button" type="button" onclick="closeRisks()" title="Close risks">×</button>`;
-        box.appendChild(header);
-        data.findings.forEach((risk) => {
-          const item = document.createElement("div");
-          item.className = "risk-item";
-          item.innerHTML = `<strong>${risk.type}</strong><span>${risk.file_path}:${risk.line}</span><pre>${escapeHtml(risk.preview)}</pre>`;
-          box.appendChild(item);
-        });
+        box.innerHTML = data.findings.map((risk) => (
+          `<div class="risk-item">
+            <strong>${escapeHtml(risk.type)}</strong>
+            <span>${escapeHtml(risk.file_path)}:${risk.line}</span>
+            <pre>${escapeHtml(risk.preview)}</pre>
+          </div>`
+        )).join("");
       } catch (error) {
         box.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
       }
+    }
+
+    $("connectGithub").addEventListener("click", () => loadGithub(true));
+    $("continueWithoutLogin").addEventListener("click", continueWithoutLogin);
+    $("homeButton").addEventListener("click", goHome);
+    $("breakdownNavButton").addEventListener("click", () => requireReadyView("breakdown"));
+    $("chatNavButton").addEventListener("click", () => requireReadyView("chat"));
+    $("openBreakdownButton").addEventListener("click", () => requireReadyView("breakdown"));
+    $("openChatButton").addEventListener("click", () => requireReadyView("chat"));
+    $("breakdownChatButton").addEventListener("click", () => requireReadyView("chat"));
+    $("breakdownHomeButton").addEventListener("click", goHome);
+    $("backToBreakdown").addEventListener("click", () => requireReadyView("breakdown"));
+    $("changeAuthButton").addEventListener("click", signOutOrLogin);
+    $("repoSelect").addEventListener("change", () => {
+      const value = $("repoSelect").value;
+      state.selectedGithubRepo = findGithubRepo(value);
+      $("repoUrl").value = value;
+    });
+    $("repoUrl").addEventListener("input", () => {
+      state.selectedGithubRepo = findGithubRepo($("repoUrl").value.trim());
+      if (state.selectedGithubRepo) $("repoSelect").value = state.selectedGithubRepo.clone_url || state.selectedGithubRepo.github_url;
+    });
+    $("fileFilter").addEventListener("input", renderFiles);
+    $("riskButton").addEventListener("click", scanRisks);
+    $("indexForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      startIndex($("repoUrl").value);
+    });
+    $("chatForm").addEventListener("submit", submitChat);
+    document.querySelectorAll("[data-side]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.sideView = button.dataset.side;
+        renderChatSide();
+      });
     });
 
-    $("leftToggle").addEventListener("click", () => togglePanel("left"));
-    $("rightToggle").addEventListener("click", () => togglePanel("right"));
-    $("rightClose").addEventListener("click", () => togglePanel("right", true));
-
+    clearRepoDetails();
+    resetChat();
+    renderTask(null);
     renderHealth();
-    refreshRepos().then(() => {
-      if (state.repos[0]) selectRepo(state.repos[0].repo_id);
-    });
+    refreshRepos().then(renderHome);
+    if (state.githubAccountLink) {
+      $("githubAccountLink").value = state.githubAccountLink;
+      loadGithub(false).then((ok) => {
+        if (ok || state.authGatePassed) goHome();
+        else setView("auth");
+      });
+    } else if (state.authGatePassed) {
+      goHome();
+    } else {
+      setView("auth");
+    }
   </script>
 </body>
 </html>

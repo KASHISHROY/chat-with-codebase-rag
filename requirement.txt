@@ -20,6 +20,9 @@ langchain-huggingface
 openai
 langchain-openai
 
+# Optional Gemini mode
+google-genai
+
 # GitHub repository cloning
 GitPython
 

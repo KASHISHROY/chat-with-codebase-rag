@@ -16,15 +16,17 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -88,6 +90,9 @@ if FRONTEND_DIR.exists():
 
 class IndexRequest(BaseModel):
     github_url: str = Field(..., min_length=8)
+    github_token: str | None = None
+    repo_description: str = ""
+    repo_full_name: str = ""
 
 
 class ChatRequest(BaseModel):
@@ -95,9 +100,15 @@ class ChatRequest(BaseModel):
     top_k: int = Field(5, ge=1, le=12)
 
 
+class GithubAccountRequest(BaseModel):
+    account: str = Field(..., min_length=1)
+
+
 class RepoSession(BaseModel):
     repo_id: str
     github_url: str
+    repo_description: str = ""
+    repo_full_name: str = ""
     status: str
     message: str = ""
     progress: int = 0
@@ -125,6 +136,8 @@ def now() -> float:
 
 def make_repo_id(github_url: str) -> str:
     normalized = github_url.strip().rstrip("/")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
     return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
 
 
@@ -167,6 +180,83 @@ def get_repo_or_404(repo_id: str) -> dict[str, Any]:
     if not repo:
         raise HTTPException(status_code=404, detail="Repository session not found.")
     return repo
+
+
+def extract_github_token(authorization: str | None = None, required: bool = False) -> str | None:
+    token = ""
+    if authorization:
+        token = authorization.strip()
+        if token.lower().startswith("bearer "):
+            token = token[7:].strip()
+    token = token or os.getenv("GITHUB_TOKEN", "").strip()
+    if required and not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Connect GitHub with a personal access token or set GITHUB_TOKEN in .env.",
+        )
+    return token or None
+
+
+def github_api_get(path: str, token: str | None = None, params: dict[str, Any] | None = None) -> Any:
+    query = f"?{urllib.parse.urlencode(params)}" if params else ""
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "chat-with-codebase-rag",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(
+        f"https://api.github.com{path}{query}",
+        headers=headers,
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=25) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = "GitHub request failed."
+        try:
+            body = json.loads(exc.read().decode("utf-8"))
+            detail = body.get("message") or detail
+        except (json.JSONDecodeError, OSError):
+            pass
+        status = exc.code if exc.code in {401, 403} else 502
+        raise HTTPException(status_code=status, detail=detail)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach GitHub: {exc}")
+
+
+def parse_github_account(value: str) -> str:
+    raw = value.strip().strip("/")
+    if not raw:
+        raise HTTPException(status_code=400, detail="Enter a GitHub profile link or username.")
+    if raw.startswith("@"):
+        raw = raw[1:]
+    if "github.com" in raw:
+        parsed = urllib.parse.urlparse(raw if "://" in raw else f"https://{raw}")
+        parts = [part for part in parsed.path.split("/") if part]
+        if not parts:
+            raise HTTPException(status_code=400, detail="Enter a valid GitHub profile link.")
+        raw = parts[0]
+    if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", raw):
+        raise HTTPException(status_code=400, detail="Enter a valid GitHub username or profile link.")
+    return raw
+
+
+def normalize_github_repo(repo: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": repo.get("id"),
+        "name": repo.get("name"),
+        "full_name": repo.get("full_name"),
+        "description": repo.get("description") or "",
+        "private": bool(repo.get("private")),
+        "language": repo.get("language") or "",
+        "updated_at": repo.get("updated_at") or "",
+        "default_branch": repo.get("default_branch") or "",
+        "github_url": repo.get("html_url") or repo.get("clone_url") or "",
+        "clone_url": repo.get("clone_url") or repo.get("html_url") or "",
+    }
 
 
 def ensure_ready(repo_id: str) -> dict[str, Any]:
@@ -359,7 +449,7 @@ def maybe_generate_llm_answer(question: str, results: list[dict], architecture: 
         return None
 
 
-def index_repository(repo_id: str, github_url: str) -> None:
+def index_repository(repo_id: str, github_url: str, github_token: str | None = None) -> None:
     index_dir = INDEX_ROOT / repo_id
     clone_dir = CLONE_ROOT / repo_id
 
@@ -372,14 +462,20 @@ def index_repository(repo_id: str, github_url: str) -> None:
             indexing_lock.release()
 
         with indexing_lock:
-            run_indexing_steps(repo_id, github_url, index_dir, clone_dir)
+            run_indexing_steps(repo_id, github_url, index_dir, clone_dir, github_token)
     except Exception as exc:
         update_repo(repo_id, status="failed", message="Indexing failed", progress=100, error=str(exc))
 
 
-def run_indexing_steps(repo_id: str, github_url: str, index_dir: Path, clone_dir: Path) -> None:
+def run_indexing_steps(
+    repo_id: str,
+    github_url: str,
+    index_dir: Path,
+    clone_dir: Path,
+    github_token: str | None = None,
+) -> None:
         update_repo(repo_id, status="indexing", message="Cloning repository", progress=10)
-        clone_repository(github_url, str(clone_dir))
+        clone_repository(github_url, str(clone_dir), github_token=github_token)
 
         update_repo(repo_id, message="Loading supported source files", progress=25)
         documents = load_code_files(str(clone_dir))
@@ -452,11 +548,89 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.get("/api/github/me")
+def github_me(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    token = extract_github_token(authorization, required=True)
+    profile = github_api_get("/user", token)
+    return {
+        "login": profile.get("login"),
+        "name": profile.get("name") or profile.get("login"),
+        "avatar_url": profile.get("avatar_url"),
+        "html_url": profile.get("html_url"),
+        "public_repos": profile.get("public_repos", 0),
+        "private_repos": profile.get("total_private_repos", 0),
+    }
+
+
+@app.get("/api/github/repos")
+def github_repos(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    token = extract_github_token(authorization, required=True)
+    found: list[dict[str, Any]] = []
+    for page in range(1, 4):
+        page_items = github_api_get(
+            "/user/repos",
+            token,
+            {
+                "visibility": "all",
+                "affiliation": "owner,collaborator,organization_member",
+                "sort": "updated",
+                "direction": "desc",
+                "per_page": 100,
+                "page": page,
+            },
+        )
+        if not page_items:
+            break
+        found.extend(normalize_github_repo(item) for item in page_items)
+        if len(page_items) < 100:
+            break
+    return {"count": len(found), "repos": found}
+
+
+@app.post("/api/github/account")
+def github_account(payload: GithubAccountRequest) -> dict[str, Any]:
+    username = parse_github_account(payload.account)
+    profile = github_api_get(f"/users/{username}")
+    found: list[dict[str, Any]] = []
+    for page in range(1, 4):
+        page_items = github_api_get(
+            f"/users/{username}/repos",
+            params={
+                "type": "owner",
+                "sort": "updated",
+                "direction": "desc",
+                "per_page": 100,
+                "page": page,
+            },
+        )
+        if not page_items:
+            break
+        found.extend(normalize_github_repo(item) for item in page_items)
+        if len(page_items) < 100:
+            break
+    return {
+        "user": {
+            "login": profile.get("login"),
+            "name": profile.get("name") or profile.get("login"),
+            "avatar_url": profile.get("avatar_url"),
+            "html_url": profile.get("html_url"),
+            "public_repos": profile.get("public_repos", 0),
+        },
+        "count": len(found),
+        "repos": found,
+    }
+
+
 @app.post("/api/index")
-def start_indexing(payload: IndexRequest, background_tasks: BackgroundTasks) -> dict[str, Any]:
+def start_indexing(
+    payload: IndexRequest,
+    background_tasks: BackgroundTasks,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
     github_url = payload.github_url.strip()
     if not github_url.startswith(("https://github.com/", "git@github.com:")):
         raise HTTPException(status_code=400, detail="Please enter a valid GitHub repository URL.")
+    github_token = payload.github_token or extract_github_token(authorization, required=False)
 
     repo_id = make_repo_id(github_url)
     existing = repos.get(repo_id)
@@ -470,6 +644,8 @@ def start_indexing(payload: IndexRequest, background_tasks: BackgroundTasks) -> 
     repo = RepoSession(
         repo_id=repo_id,
         github_url=github_url,
+        repo_description=payload.repo_description.strip()[:500],
+        repo_full_name=payload.repo_full_name.strip()[:180],
         status="queued",
         message="Waiting to start indexing",
         progress=0,
@@ -482,7 +658,7 @@ def start_indexing(payload: IndexRequest, background_tasks: BackgroundTasks) -> 
     with repo_lock:
         repos[repo_id] = repo
     save_manifest()
-    background_tasks.add_task(index_repository, repo_id, github_url)
+    background_tasks.add_task(index_repository, repo_id, github_url, github_token)
     return {"repo_id": repo_id, "status": "queued", "message": "Indexing started"}
 
 
