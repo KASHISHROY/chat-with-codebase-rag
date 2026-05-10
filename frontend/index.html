@@ -218,6 +218,26 @@
       color: var(--muted);
     }
 
+    .risk-panel {
+      display: none;
+      margin-top: 12px;
+      border: 1px solid #efc9c4;
+      background: #fff8f6;
+      border-radius: 8px;
+      max-height: 220px;
+      overflow: auto;
+      padding: 10px;
+    }
+
+    .risk-panel.active {
+      display: grid;
+      gap: 8px;
+    }
+
+    .risk-panel .empty {
+      background: #fff;
+    }
+
     .messages {
       padding: 20px;
       overflow: auto;
@@ -335,6 +355,7 @@
           <button id="riskButton" class="warn" type="button">Scan Risks</button>
         </div>
         <div id="metrics" class="metrics"></div>
+        <div id="risks" class="risk-panel"></div>
       </header>
 
       <section id="messages" class="messages">
@@ -361,11 +382,6 @@
       <div class="section">
         <h2>Files</h2>
         <div id="files" class="file-list"></div>
-      </div>
-
-      <div class="section">
-        <h2>Risks</h2>
-        <div id="risks" class="risk-list"></div>
       </div>
     </aside>
   </div>
@@ -576,6 +592,7 @@
     $("riskButton").addEventListener("click", async () => {
       if (!state.repoId) return;
       const box = $("risks");
+      box.classList.add("active");
       box.innerHTML = '<div class="empty">Scanning indexed files...</div>';
       try {
         const data = await api(`/api/repos/${state.repoId}/risks`);
@@ -584,6 +601,10 @@
           box.innerHTML = '<div class="empty">No simple risk signals found.</div>';
           return;
         }
+        const summary = document.createElement("div");
+        summary.className = "empty";
+        summary.textContent = `${data.findings.length} risk signals found. Review these before shipping or presenting the repo.`;
+        box.appendChild(summary);
         data.findings.forEach((risk) => {
           const item = document.createElement("div");
           item.className = "risk-item";
