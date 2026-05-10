@@ -27,6 +27,7 @@
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       min-height: 100vh;
+      overflow: hidden;
     }
 
     button, input {
@@ -64,7 +65,8 @@
     .app {
       display: grid;
       grid-template-columns: 320px minmax(0, 1fr) 380px;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
 
     .sidebar, .inspector {
@@ -72,6 +74,7 @@
       border-right: 1px solid var(--line);
       padding: 18px;
       overflow: auto;
+      height: 100vh;
     }
 
     .inspector {
@@ -83,7 +86,8 @@
       display: grid;
       grid-template-rows: auto 1fr auto;
       min-width: 0;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
 
     .brand {
@@ -217,6 +221,7 @@
     .messages {
       padding: 20px;
       overflow: auto;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       gap: 14px;
@@ -289,8 +294,9 @@
     }
 
     @media (max-width: 760px) {
+      body { overflow: auto; }
       .app { display: block; }
-      .sidebar, .inspector { border: 0; border-bottom: 1px solid var(--line); max-height: none; }
+      .sidebar, .inspector { border: 0; border-bottom: 1px solid var(--line); max-height: none; height: auto; }
       .main { min-height: 70vh; }
       .chat-form { grid-template-columns: 1fr; }
     }

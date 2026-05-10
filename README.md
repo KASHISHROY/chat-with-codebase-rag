@@ -21,7 +21,7 @@ A free-first RAG developer assistant that indexes a public GitHub repository and
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn backend.main:app --reload
+uvicorn backend.main:app
 ```
 
 Open:
@@ -29,6 +29,14 @@ Open:
 ```text
 http://127.0.0.1:8000
 ```
+
+If you need auto-reload while editing code, exclude generated folders:
+
+```bash
+uvicorn backend.main:app --reload --reload-exclude faiss_index/* --reload-exclude cloned_repos/*
+```
+
+Plain `--reload` watches generated files like `faiss_index/repos.json`; when that file changes during indexing, the server can restart and interrupt the background job.
 
 ## Free Mode
 

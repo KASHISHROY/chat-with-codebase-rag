@@ -34,6 +34,7 @@ try:
         create_onboarding_summary,
         find_risk_signals,
         generate_free_answer,
+        hybrid_rerank,
         suggest_questions,
         summarize_architecture,
     )
@@ -46,6 +47,7 @@ except ImportError:  # Allows `python backend/main.py` during quick local testin
         create_onboarding_summary,
         find_risk_signals,
         generate_free_answer,
+        hybrid_rerank,
         suggest_questions,
         summarize_architecture,
     )
@@ -109,6 +111,7 @@ class RepoSession(BaseModel):
 
 
 repo_lock = Lock()
+indexing_lock = Lock()
 repos: dict[str, dict[str, Any]] = {}
 runtime_cache: dict[str, dict[str, Any]] = {}
 
@@ -131,8 +134,15 @@ def load_manifest() -> None:
         data = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return
+    for repo in data.values():
+        if repo.get("status") in {"queued", "indexing"}:
+            repo["status"] = "failed"
+            repo["message"] = "Indexing was interrupted. Click Index Repo again to retry."
+            repo["error"] = "Previous server process stopped before indexing finished."
+            repo["progress"] = 100
     with repo_lock:
         repos.update(data)
+    save_manifest()
 
 
 def save_manifest() -> None:
@@ -178,6 +188,42 @@ def load_runtime(repo_id: str) -> dict[str, Any]:
     return runtime_cache[repo_id]
 
 
+def refresh_architecture_if_needed(repo_id: str) -> None:
+    repo = repos.get(repo_id)
+    if not repo or repo.get("status") != "ready":
+        return
+    architecture = repo.get("architecture") or {}
+    if architecture.get("code_facts"):
+        return
+
+    try:
+        _, metadata = load_faiss_index(repo["index_dir"])
+    except Exception:
+        return
+
+    by_file: dict[str, list[dict]] = {}
+    for chunk in metadata:
+        by_file.setdefault(chunk["file_path"], []).append(chunk)
+
+    documents = []
+    for file_path, chunks in by_file.items():
+        ordered = sorted(chunks, key=lambda item: item.get("chunk_index", 0))
+        documents.append(
+            {
+                "file_path": file_path,
+                "content": "\n".join(item.get("content", "") for item in ordered),
+            }
+        )
+
+    updated_architecture = summarize_architecture(documents, metadata)
+    update_repo(
+        repo_id,
+        architecture=updated_architecture,
+        onboarding=create_onboarding_summary(updated_architecture),
+        suggestions=suggest_questions(updated_architecture),
+    )
+
+
 def maybe_generate_llm_answer(question: str, results: list[dict]) -> str | None:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -212,6 +258,20 @@ def index_repository(repo_id: str, github_url: str) -> None:
     clone_dir = CLONE_ROOT / repo_id
 
     try:
+        if not indexing_lock.acquire(blocking=False):
+            update_repo(repo_id, status="queued", message="Waiting for another repo to finish indexing", progress=5)
+            with indexing_lock:
+                pass
+        else:
+            indexing_lock.release()
+
+        with indexing_lock:
+            run_indexing_steps(repo_id, github_url, index_dir, clone_dir)
+    except Exception as exc:
+        update_repo(repo_id, status="failed", message="Indexing failed", progress=100, error=str(exc))
+
+
+def run_indexing_steps(repo_id: str, github_url: str, index_dir: Path, clone_dir: Path) -> None:
         update_repo(repo_id, status="indexing", message="Cloning repository", progress=10)
         clone_repository(github_url, str(clone_dir))
 
@@ -255,8 +315,6 @@ def index_repository(repo_id: str, github_url: str) -> None:
             suggestions=suggestions,
             error=None,
         )
-    except Exception as exc:
-        update_repo(repo_id, status="failed", message="Indexing failed", progress=100, error=str(exc))
 
 
 @app.on_event("startup")
@@ -285,8 +343,12 @@ def start_indexing(payload: IndexRequest, background_tasks: BackgroundTasks) -> 
 
     repo_id = make_repo_id(github_url)
     existing = repos.get(repo_id)
-    if existing and existing["status"] in {"indexing", "ready"}:
+    if existing and existing["status"] == "ready":
         return {"repo_id": repo_id, "status": existing["status"], "message": existing["message"]}
+    if existing and existing["status"] in {"queued", "indexing"}:
+        age_seconds = now() - existing.get("updated_at", 0)
+        if age_seconds < 120:
+            return {"repo_id": repo_id, "status": existing["status"], "message": existing["message"]}
 
     repo = RepoSession(
         repo_id=repo_id,
@@ -309,27 +371,42 @@ def start_indexing(payload: IndexRequest, background_tasks: BackgroundTasks) -> 
 
 @app.get("/api/repos")
 def list_repos() -> list[dict[str, Any]]:
+    for repo_id in list(repos):
+        refresh_architecture_if_needed(repo_id)
     return sorted(repos.values(), key=lambda item: item["updated_at"], reverse=True)
 
 
 @app.get("/api/repos/{repo_id}")
 def get_repo(repo_id: str) -> dict[str, Any]:
+    refresh_architecture_if_needed(repo_id)
     return get_repo_or_404(repo_id)
 
 
 @app.post("/api/repos/{repo_id}/chat")
 def chat(repo_id: str, payload: ChatRequest) -> dict[str, Any]:
     runtime = load_runtime(repo_id)
+    repo = ensure_ready(repo_id)
     results = search_similar_chunks(
         query=payload.question,
         embedding_model=runtime["embedding_model"],
         index=runtime["index"],
         metadata=runtime["metadata"],
-        top_k=payload.top_k,
+        top_k=max(payload.top_k, 10),
     )
+    results = hybrid_rerank(
+        payload.question,
+        results,
+        runtime["metadata"],
+        repo.get("architecture"),
+    )[:payload.top_k]
 
     llm_answer = maybe_generate_llm_answer(payload.question, results)
-    free_answer = generate_free_answer(payload.question, results)
+    free_answer = generate_free_answer(
+        payload.question,
+        results,
+        metadata=runtime["metadata"],
+        architecture=repo.get("architecture"),
+    )
     if llm_answer:
         free_answer["answer"] = llm_answer
         free_answer["mode"] = "llm"
@@ -372,7 +449,8 @@ def risks(repo_id: str) -> dict[str, Any]:
 
 def cli() -> None:
     print("FastAPI app is ready.")
-    print("Run: uvicorn backend.main:app --reload")
+    print("Run: uvicorn backend.main:app")
+    print("Tip: avoid --reload while indexing because generated FAISS files can restart the server.")
     print("Then open: http://127.0.0.1:8000")
 
 

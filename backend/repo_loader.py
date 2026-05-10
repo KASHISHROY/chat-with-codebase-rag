@@ -16,6 +16,7 @@ This is STEP 1 and STEP 2 of the RAG pipeline.
 
 import os
 import shutil
+import stat
 import tempfile
 from git import Repo  # GitPython library — lets us clone repos in Python
 
@@ -62,6 +63,14 @@ SKIP_FOLDERS = {
 }
 
 
+def handle_remove_readonly(func, path, exc_info):
+    """
+    Windows can mark Git pack files as read-only. Clear the bit and retry.
+    """
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def clone_repository(github_url: str, clone_dir: str = None) -> str:
     """
     Clone a GitHub repository to a local directory.
@@ -87,7 +96,7 @@ def clone_repository(github_url: str, clone_dir: str = None) -> str:
     # If the folder already has content from a previous run, clean it first
     if os.path.exists(clone_dir) and os.listdir(clone_dir):
         print("      Folder already exists. Cleaning it before re-cloning...")
-        shutil.rmtree(clone_dir)
+        shutil.rmtree(clone_dir, onerror=handle_remove_readonly)
         os.makedirs(clone_dir)
 
     # Use GitPython to clone — this is the equivalent of running:
