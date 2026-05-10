@@ -495,6 +495,15 @@
       return div;
     }
 
+    function resetWorkspace(repo) {
+      $("messages").innerHTML = "";
+      addMessage(`Selected ${repoName(repo.github_url)}. Ask about architecture, routes, modules, data flow, setup, or risky code.`, "system");
+      $("sources").innerHTML = '<div class="empty">Citations from answers appear here.</div>';
+      const risks = $("risks");
+      risks.classList.remove("active");
+      risks.innerHTML = "";
+    }
+
     function escapeHtml(text) {
       return String(text)
         .replaceAll("&", "&amp;")
@@ -537,6 +546,7 @@
 
     async function selectRepo(repoId) {
       const repo = await api(`/api/repos/${repoId}`);
+      if (state.repoId !== repoId) resetWorkspace(repo);
       renderRepo(repo);
       if (repo.status === "indexing" || repo.status === "queued") startPolling(repoId);
     }

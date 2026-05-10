@@ -328,6 +328,12 @@ def infer_intent(question: str) -> str:
         return "routes"
     if any(word in q for word in ["form", "input", "field", "parameter", "takes", "collect"]):
         return "frontend"
+    if is_main_code_question(question):
+        return "entrypoint"
+    if any(phrase in q for phrase in ["main modules", "modules connect", "how do they connect", "architecture", "data flow"]):
+        return "modules"
+    if is_overview_question(question):
+        return "overview"
     if any(word in q for word in ["run", "start", "install", "setup", "command"]):
         return "setup"
     if any(word in q for word in ["database", "db", "schema", "table", "sql"]):
@@ -336,10 +342,6 @@ def infer_intent(question: str) -> str:
         return "frontend"
     if any(word in q for word in ["risk", "bug", "todo", "fixme", "security", "issue"]):
         return "risk"
-    if is_main_code_question(question):
-        return "entrypoint"
-    if is_overview_question(question):
-        return "overview"
     return "general"
 
 
@@ -360,6 +362,28 @@ def extract_routes_from_chunks(metadata: list[dict]) -> list[dict]:
                     {
                         "path": path,
                         "methods": method_list,
+                        "function": function,
+                        "file_path": chunk["file_path"],
+                        "start_line": chunk["start_line"],
+                        "end_line": chunk["end_line"],
+                    }
+                )
+                seen.add(key)
+        for match in re.finditer(
+            r"@(?:router|app)\.(get|post|put|delete|patch)\(['\"]([^'\"]+)['\"]",
+            content,
+            flags=re.IGNORECASE,
+        ):
+            method, path = match.groups()
+            after = content[match.end(): match.end() + 700]
+            function_match = re.search(r"\n\s*(?:async\s+def|def)\s+([A-Za-z_][A-Za-z0-9_]*)", after)
+            function = function_match.group(1) if function_match else "[handler]"
+            key = (chunk["file_path"], path, method.upper(), function)
+            if key not in seen:
+                routes.append(
+                    {
+                        "path": path,
+                        "methods": [method.upper()],
                         "function": function,
                         "file_path": chunk["file_path"],
                         "start_line": chunk["start_line"],
@@ -401,6 +425,8 @@ def extract_symbols_from_chunks(metadata: list[dict]) -> list[dict]:
 def extract_forms_from_chunks(metadata: list[dict]) -> list[dict]:
     forms = []
     for chunk in metadata:
+        if chunk.get("extension") not in {".html", ".jsx", ".tsx"}:
+            continue
         content = chunk.get("content", "")
         fields = form_fields(content)
         if fields:
@@ -560,12 +586,15 @@ def important_sources(metadata: list[dict], architecture: dict | None, limit: in
     for chunk in metadata:
         content = chunk.get("content", "")
         path = chunk.get("file_path", "")
+        basename = os.path.basename(path)
         score = 0
-        if path in entrypoints:
+        if path in entrypoints and basename not in {"requirements.txt", "package.json", "README.md", "README.MD"}:
             score += 8
-        if os.path.basename(path) in ENTRYPOINT_NAMES:
+        elif path in entrypoints:
+            score += 1
+        if basename in {"main.py", "app.py", "application.py", "server.py", "App.tsx", "App.jsx"}:
             score += 6
-        if "@app.route" in content or "Flask(__name__)" in content:
+        if "@app.route" in content or "@router." in content or "FastAPI(" in content or "Flask(__name__)" in content:
             score += 5
         if "if __name__" in content:
             score += 4
@@ -634,6 +663,11 @@ def compose_main_code_answer(metadata: list[dict], architecture: dict | None) ->
         return "I could not identify a main code file from the indexed chunks.", []
 
     primary = sources[0]
+    for candidate in sources:
+        basename = os.path.basename(candidate.get("file_path", ""))
+        if basename in {"main.py", "app.py", "application.py", "server.py", "App.tsx", "App.jsx"}:
+            primary = candidate
+            break
     content = primary.get("content", "")
     path = primary.get("file_path", "")
     routes = route_lines(content)
@@ -732,6 +766,91 @@ def compose_model_loading_answer(facts: dict, sources: list[dict]) -> str:
     return "\n".join(lines) + "\n\nSources:\n" + source_lines(sources)
 
 
+def sources_for_model_facts(metadata: list[dict], facts: dict) -> list[dict]:
+    model_files = {model.get("file_path") for model in facts.get("models", []) if model.get("file_path")}
+    selected = [chunk for chunk in metadata if chunk.get("file_path") in model_files]
+    selected.sort(
+        key=lambda chunk: (
+            0 if ".predict(" in chunk.get("content", "") or "pickle.load" in chunk.get("content", "") else 1,
+            chunk.get("file_path", ""),
+            chunk.get("chunk_index", 0),
+        )
+    )
+    return selected[:6]
+
+
+def compose_modules_answer(metadata: list[dict], architecture: dict | None, facts: dict, sources: list[dict]) -> str:
+    architecture = architecture or {}
+    frameworks = architecture.get("frameworks", [])
+    folders = [item["name"] for item in architecture.get("top_folders", [])[:8]]
+    entrypoints = architecture.get("entrypoints", [])
+    routes = facts.get("routes", [])
+    forms = facts.get("forms", [])
+    models = facts.get("models", [])
+
+    lines = []
+    if frameworks:
+        lines.append("This project appears to combine: " + ", ".join(frameworks) + ".")
+
+    if any(path.startswith("backend") for path in folders) or any("backend" in item.get("file_path", "") for item in routes):
+        route_files = sorted({route["file_path"] for route in routes})[:8]
+        if route_files:
+            lines.append("Backend/API layer: FastAPI route modules live in " + ", ".join(route_files) + ".")
+        else:
+            lines.append("Backend/API layer: backend files contain the server-side application code.")
+
+    frontend_files = sorted({
+        chunk["file_path"]
+        for chunk in metadata
+        if chunk.get("file_path", "").startswith("frontend")
+        and chunk.get("extension") in {".tsx", ".ts", ".jsx", ".js"}
+        and "\\src\\" in chunk.get("file_path", "")
+        and not any(part in chunk.get("file_path", "").lower() for part in ["eslint", "postcss", "vite.config", "tailwind"])
+    })[:10]
+    if frontend_files:
+        lines.append("Frontend layer: React/Vite code is under frontend, with key files like " + ", ".join(frontend_files[:6]) + ".")
+
+    ml_files = sorted({
+        chunk["file_path"]
+        for chunk in metadata
+        if "\\ml\\" in chunk.get("file_path", "") or "/ml/" in chunk.get("file_path", "")
+    })[:8]
+    if ml_files:
+        lines.append("ML/workflow layer: model training or agent pipeline code appears in " + ", ".join(ml_files[:6]) + ".")
+
+    worker_files = sorted({
+        chunk["file_path"]
+        for chunk in metadata
+        if "worker" in chunk.get("file_path", "").lower() or "celery" in chunk.get("file_path", "").lower()
+    })[:6]
+    if worker_files:
+        lines.append("Background jobs: worker/task code appears in " + ", ".join(worker_files) + ".")
+
+    if routes:
+        route_preview = ", ".join(f"{route['path']} -> {route['function']}" for route in routes[:8])
+        lines.append("Connection points: API routes map requests to handlers such as " + route_preview + ".")
+
+    if forms:
+        form_files = ", ".join(sorted({form["file_path"] for form in forms})[:5])
+        lines.append("User input enters through frontend forms/templates in " + form_files + ".")
+
+    if models:
+        model_preview = ", ".join(model["name"] for model in models[:5])
+        lines.append("Model or ML artifacts referenced in code: " + model_preview + ".")
+
+    if entrypoints:
+        useful_entrypoints = [
+            path for path in entrypoints
+            if os.path.basename(path) not in {"requirements.txt", "package.json", "README.md", "README.MD"}
+        ] or entrypoints
+        lines.append("Start reading from: " + ", ".join(useful_entrypoints[:6]) + ".")
+
+    if not lines:
+        lines.append("I found the strongest module evidence in the cited source files below.")
+
+    return "\n\n".join(lines) + "\n\nSources:\n" + source_lines(sources)
+
+
 def source_lines(sources: list[dict]) -> str:
     if not sources:
         return ""
@@ -755,6 +874,13 @@ def compose_routes_answer(facts: dict, sources: list[dict]) -> str:
             f"{route['file_path']} lines {route['start_line']}-{route['end_line']}"
         )
     return "\n".join(lines) + "\n\nSources:\n" + source_lines(sources)
+
+
+def sources_for_route_facts(metadata: list[dict], facts: dict) -> list[dict]:
+    route_files = {route.get("file_path") for route in facts.get("routes", []) if route.get("file_path")}
+    selected = [chunk for chunk in metadata if chunk.get("file_path") in route_files]
+    selected.sort(key=lambda chunk: (chunk.get("file_path", ""), chunk.get("chunk_index", 0)))
+    return selected[:8]
 
 
 def compose_setup_answer(facts: dict, sources: list[dict]) -> str:
@@ -872,9 +998,21 @@ def compose_answer_by_intent(question: str, metadata: list[dict], architecture: 
         answer, chosen = compose_prediction_answer(metadata, architecture)
         return {"answer": answer, "confidence": "medium" if chosen else "low", "sources": chosen}
     if intent == "model_loading":
-        return {"answer": compose_model_loading_answer(facts, sources), "confidence": "high", "sources": sources}
+        model_sources = sources_for_model_facts(metadata, facts) or sources
+        return {
+            "answer": compose_model_loading_answer(facts, model_sources),
+            "confidence": "high" if facts.get("models") else "low",
+            "sources": model_sources,
+        }
+    if intent == "modules":
+        return {
+            "answer": compose_modules_answer(metadata, architecture, facts, sources),
+            "confidence": "medium",
+            "sources": sources,
+        }
     if intent == "routes":
-        return {"answer": compose_routes_answer(facts, sources), "confidence": "medium", "sources": sources}
+        route_sources = sources_for_route_facts(metadata, facts) or sources
+        return {"answer": compose_routes_answer(facts, route_sources), "confidence": "medium", "sources": route_sources}
     if intent == "setup":
         return {"answer": compose_setup_answer(facts, sources), "confidence": "medium", "sources": sources}
     if intent == "database":
@@ -947,7 +1085,14 @@ def find_risk_signals(documents: list[dict], limit: int = 20) -> list[dict]:
     patterns = {
         "TODO/FIXME": re.compile(r"\b(TODO|FIXME|HACK)\b", re.IGNORECASE),
         "Broad exception": re.compile(r"except\s+Exception|catch\s*\([^)]*\)", re.IGNORECASE),
-        "Possible secret": re.compile(r"(api[_-]?key|secret|password|token)\s*[:=]", re.IGNORECASE),
+        "Hardcoded secret-like value": re.compile(
+            r"(api[_-]?key|secret|password|token)\s*[:=]\s*['\"][^'\"\s]{8,}['\"]",
+            re.IGNORECASE,
+        ),
+        "Secret placeholder in docs": re.compile(
+            r"(your[-_][a-z0-9_-]*(key|secret|token)|YOUR_[A-Z0-9_]*(KEY|SECRET|TOKEN))",
+            re.IGNORECASE,
+        ),
         "Debug print/log": re.compile(r"\b(print\(|console\.log\()", re.IGNORECASE),
     }
     findings = []
