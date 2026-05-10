@@ -16,6 +16,8 @@ import hashlib
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -224,31 +226,87 @@ def refresh_architecture_if_needed(repo_id: str) -> None:
     )
 
 
-def maybe_generate_llm_answer(question: str, results: list[dict]) -> str | None:
+def build_generation_prompt(question: str, results: list[dict], architecture: dict | None = None) -> str:
+    architecture = architecture or {}
+    facts = architecture.get("code_facts") or {}
+    fact_summary = json.dumps(
+        {
+            "frameworks": architecture.get("frameworks", []),
+            "entrypoints": architecture.get("entrypoints", []),
+            "routes": facts.get("routes", [])[:12],
+            "forms": facts.get("forms", [])[:8],
+            "models": facts.get("models", [])[:8],
+            "symbols": facts.get("symbols", [])[:20],
+        },
+        indent=2,
+    )
+    context = "\n\n".join(
+        f"Source {i + 1}: {chunk['file_path']} lines {chunk['start_line']}-{chunk['end_line']}\n"
+        f"```{chunk.get('extension', '').lstrip('.')}\n{chunk['content'][:2600]}\n```"
+        for i, chunk in enumerate(results[:8])
+    )
+    return f"""You are a senior software engineer helping a developer understand a codebase.
+Answer the question using ONLY the repository facts and source snippets below.
+If the evidence is incomplete, say what is missing instead of guessing.
+Be direct, practical, and cite file paths with line ranges.
+
+Question:
+{question}
+
+Repository facts:
+{fact_summary}
+
+Retrieved source snippets:
+{context}
+
+Answer:"""
+
+
+def maybe_generate_ollama_answer(question: str, results: list[dict], architecture: dict | None = None) -> str | None:
+    model = os.getenv("OLLAMA_MODEL", "").strip()
+    if not model:
+        return None
+
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+    payload = {
+        "model": model,
+        "prompt": build_generation_prompt(question, results, architecture),
+        "stream": False,
+        "options": {
+            "temperature": 0.1,
+            "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "8192")),
+        },
+    }
+    request = urllib.request.Request(
+        f"{base_url}/api/generate",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=int(os.getenv("OLLAMA_TIMEOUT", "90"))) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        answer = (data.get("response") or "").strip()
+        return answer or None
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return None
+
+
+def maybe_generate_llm_answer(question: str, results: list[dict], architecture: dict | None = None) -> tuple[str, str] | None:
+    ollama_answer = maybe_generate_ollama_answer(question, results, architecture)
+    if ollama_answer:
+        return ollama_answer, "ollama"
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None
 
-    context = "\n\n".join(
-        f"File: {chunk['file_path']} lines {chunk['start_line']}-{chunk['end_line']}\n"
-        f"```\n{chunk['content'][:2200]}\n```"
-        for chunk in results
-    )
-    prompt = f"""Answer using only the cited code context.
-If the context is insufficient, say so.
-Always cite file paths and line ranges.
-
-Question: {question}
-
-Context:
-{context}
-"""
     try:
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
 
         llm = ChatOpenAI(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), temperature=0.1, api_key=api_key)
-        return llm.invoke([HumanMessage(content=prompt)]).content
+        return llm.invoke([HumanMessage(content=build_generation_prompt(question, results, architecture))]).content, "llm"
     except Exception:
         return None
 
@@ -400,16 +458,17 @@ def chat(repo_id: str, payload: ChatRequest) -> dict[str, Any]:
         repo.get("architecture"),
     )[:payload.top_k]
 
-    llm_answer = maybe_generate_llm_answer(payload.question, results)
     free_answer = generate_free_answer(
         payload.question,
         results,
         metadata=runtime["metadata"],
         architecture=repo.get("architecture"),
     )
-    if llm_answer:
-        free_answer["answer"] = llm_answer
-        free_answer["mode"] = "llm"
+    generated = maybe_generate_llm_answer(payload.question, free_answer.get("sources") or results, repo.get("architecture"))
+    if generated:
+        answer, mode = generated
+        free_answer["answer"] = answer
+        free_answer["mode"] = mode
     else:
         free_answer["mode"] = "free"
     free_answer["question"] = payload.question

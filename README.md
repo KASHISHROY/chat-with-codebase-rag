@@ -48,6 +48,30 @@ The default mode uses:
 
 No API key is required.
 
+## Better Free Answers With Ollama
+
+For open-ended questions, enable a local coding model:
+
+```bash
+ollama pull qwen2.5-coder:7b
+```
+
+Then add this to `.env`:
+
+```bash
+OLLAMA_MODEL=qwen2.5-coder:7b
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_NUM_CTX=8192
+```
+
+Start Ollama, restart the FastAPI server, and chat responses will use:
+
+```text
+hybrid retrieval -> repo facts -> local LLM answer -> cited sources
+```
+
+If Ollama is not configured or fails, the app falls back to the local rule/fact answer engine.
+
 ## Optional LLM Mode
 
 Create `.env` from `.env.example` and add:

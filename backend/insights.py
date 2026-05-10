@@ -320,6 +320,8 @@ def tokenize(text: str) -> list[str]:
 
 def infer_intent(question: str) -> str:
     q = question.lower()
+    if any(word in q for word in ["loaded", "load", "pickle", "pkl", "model file", "scaler"]):
+        return "model_loading"
     if any(word in q for word in ["predict", "prediction", "target", "model output"]):
         return "prediction"
     if any(word in q for word in ["route", "endpoint", "api", "url"]):
@@ -706,6 +708,30 @@ def compose_prediction_answer(metadata: list[dict], architecture: dict | None) -
     return "\n\n".join(details) + "\n\nSources:\n" + "\n".join(source_lines), sources
 
 
+def compose_model_loading_answer(facts: dict, sources: list[dict]) -> str:
+    models = facts.get("models", [])
+    if not models:
+        return (
+            "I did not find explicit model-loading code such as pickle.load or a model file path "
+            "in the indexed chunks.\n\nSources:\n" + source_lines(sources)
+        )
+
+    lines = ["The model/scaler loading happens here:"]
+    seen = set()
+    for model in models:
+        key = (model.get("name"), model.get("loaded_from"), model.get("file_path"))
+        if key in seen:
+            continue
+        seen.add(key)
+        loaded_from = f" from {model['loaded_from']}" if model.get("loaded_from") else ""
+        predict_note = " It is also used for prediction." if model.get("predict_called") else ""
+        lines.append(
+            f"- {model['name']}{loaded_from} in {model['file_path']} "
+            f"lines {model['start_line']}-{model['end_line']}.{predict_note}"
+        )
+    return "\n".join(lines) + "\n\nSources:\n" + source_lines(sources)
+
+
 def source_lines(sources: list[dict]) -> str:
     if not sources:
         return ""
@@ -845,6 +871,8 @@ def compose_answer_by_intent(question: str, metadata: list[dict], architecture: 
     if intent == "prediction":
         answer, chosen = compose_prediction_answer(metadata, architecture)
         return {"answer": answer, "confidence": "medium" if chosen else "low", "sources": chosen}
+    if intent == "model_loading":
+        return {"answer": compose_model_loading_answer(facts, sources), "confidence": "high", "sources": sources}
     if intent == "routes":
         return {"answer": compose_routes_answer(facts, sources), "confidence": "medium", "sources": sources}
     if intent == "setup":
