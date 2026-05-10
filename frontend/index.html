@@ -238,6 +238,27 @@
       background: #fff;
     }
 
+    .risk-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--accent-2);
+      font-weight: 700;
+    }
+
+    .icon-button {
+      width: 30px;
+      min-height: 30px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 7px;
+      font-size: 18px;
+      line-height: 1;
+    }
+
     .messages {
       padding: 20px;
       overflow: auto;
@@ -526,6 +547,12 @@
       });
     }
 
+    function closeRisks() {
+      const box = $("risks");
+      box.classList.remove("active");
+      box.innerHTML = "";
+    }
+
     async function loadSources(repoId) {
       const data = await api(`/api/repos/${repoId}/sources`);
       const files = $("files");
@@ -591,7 +618,9 @@
           body: JSON.stringify({ question, top_k: 6 })
         });
         pending.remove();
-        const meta = `<span>${data.mode === "llm" ? "LLM" : "Free retrieval"}</span><span>confidence: ${data.confidence}</span>`;
+        const modeLabel = data.mode === "llm" ? "LLM" : data.mode === "gemini" ? "Gemini" : data.mode === "ollama" ? "Ollama" : "Free retrieval";
+        const warning = data.generation_warning ? `<span>${escapeHtml(data.generation_warning)}</span>` : "";
+        const meta = `<span>${modeLabel}</span><span>confidence: ${data.confidence}</span>${warning}`;
         addMessage(data.answer, "assistant", meta);
         renderSources(data.sources || []);
       } catch (error) {
@@ -608,13 +637,13 @@
         const data = await api(`/api/repos/${state.repoId}/risks`);
         box.innerHTML = "";
         if (!data.findings.length) {
-          box.innerHTML = '<div class="empty">No simple risk signals found.</div>';
+          box.innerHTML = '<div class="risk-header"><span>No simple risk signals found.</span><button class="icon-button" type="button" onclick="closeRisks()" title="Close risks">×</button></div>';
           return;
         }
-        const summary = document.createElement("div");
-        summary.className = "empty";
-        summary.textContent = `${data.findings.length} risk signals found. Review these before shipping or presenting the repo.`;
-        box.appendChild(summary);
+        const header = document.createElement("div");
+        header.className = "risk-header";
+        header.innerHTML = `<span>${data.findings.length} risk signals found</span><button class="icon-button" type="button" onclick="closeRisks()" title="Close risks">×</button>`;
+        box.appendChild(header);
         data.findings.forEach((risk) => {
           const item = document.createElement("div");
           item.className = "risk-item";
