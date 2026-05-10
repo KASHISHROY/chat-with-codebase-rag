@@ -13,6 +13,7 @@ The backend stays free by default:
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import time
@@ -245,10 +246,20 @@ def build_generation_prompt(question: str, results: list[dict], architecture: di
         f"```{chunk.get('extension', '').lstrip('.')}\n{chunk['content'][:2600]}\n```"
         for i, chunk in enumerate(results[:8])
     )
-    return f"""You are a senior software engineer helping a developer understand a codebase.
-Answer the question using ONLY the repository facts and source snippets below.
-If the evidence is incomplete, say what is missing instead of guessing.
-Be direct, practical, and cite file paths with line ranges.
+    return f"""You are Codebase Mentor, a senior engineer explaining a repository to another developer.
+
+Use ONLY the repository facts and source snippets below. Do not invent files, endpoints, features, or business claims.
+Write like a polished engineering handoff, not like a raw search result.
+
+Answer style:
+- Start with a 1-2 sentence direct answer.
+- Then use 2-5 short sections only if they help.
+- Prefer concrete file paths, functions, routes, and data flow.
+- Cite evidence inline like: backend/app/main.py lines 11-56.
+- Do not say "Repository facts" or "Source 1" in the final answer.
+- Do not dump every retrieved snippet; synthesize the important parts.
+- If evidence is incomplete, say exactly what is missing and what file would likely contain it.
+- Keep the answer under 450 words unless the user asks for a deep dive.
 
 Question:
 {question}
@@ -292,10 +303,47 @@ def maybe_generate_ollama_answer(question: str, results: list[dict], architectur
         return None
 
 
+last_generation_warning: str | None = None
+
+
+def set_generation_warning(message: str | None) -> None:
+    global last_generation_warning
+    last_generation_warning = message
+
+
+def maybe_generate_gemini_answer(question: str, results: list[dict], architecture: dict | None = None) -> str | None:
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    try:
+        from google import genai
+    except ImportError:
+        set_generation_warning("Gemini is configured, but google-genai is not installed in this Python environment.")
+        return None
+
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            contents=build_generation_prompt(question, results, architecture),
+        )
+        answer = getattr(response, "text", "") or ""
+        return answer.strip() or None
+    except Exception as exc:
+        set_generation_warning(f"Gemini generation failed: {type(exc).__name__}: {exc}")
+        return None
+
+
 def maybe_generate_llm_answer(question: str, results: list[dict], architecture: dict | None = None) -> tuple[str, str] | None:
+    set_generation_warning(None)
     ollama_answer = maybe_generate_ollama_answer(question, results, architecture)
     if ollama_answer:
         return ollama_answer, "ollama"
+
+    gemini_answer = maybe_generate_gemini_answer(question, results, architecture)
+    if gemini_answer:
+        return gemini_answer, "gemini"
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -389,8 +437,19 @@ def frontend():
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "embedding_provider": EMBEDDING_PROVIDER}
+def health() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "embedding_provider": EMBEDDING_PROVIDER,
+        "generation": {
+            "gemini_configured": bool(os.getenv("GEMINI_API_KEY", "").strip()),
+            "gemini_model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            "google_genai_installed": importlib.util.find_spec("google.genai") is not None,
+            "ollama_configured": bool(os.getenv("OLLAMA_MODEL", "").strip()),
+            "openai_configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+            "last_warning": last_generation_warning,
+        },
+    }
 
 
 @app.post("/api/index")
@@ -471,6 +530,8 @@ def chat(repo_id: str, payload: ChatRequest) -> dict[str, Any]:
         free_answer["mode"] = mode
     else:
         free_answer["mode"] = "free"
+        if last_generation_warning:
+            free_answer["generation_warning"] = last_generation_warning
     free_answer["question"] = payload.question
     return free_answer
 

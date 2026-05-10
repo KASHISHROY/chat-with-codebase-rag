@@ -69,12 +69,31 @@
       overflow: hidden;
     }
 
+    .app.left-collapsed {
+      grid-template-columns: 0 minmax(0, 1fr) 380px;
+    }
+
+    .app.right-collapsed {
+      grid-template-columns: 320px minmax(0, 1fr) 0;
+    }
+
+    .app.left-collapsed.right-collapsed {
+      grid-template-columns: 0 minmax(0, 1fr) 0;
+    }
+
     .sidebar, .inspector {
       background: #fbfbf7;
       border-right: 1px solid var(--line);
       padding: 18px;
       overflow: auto;
       height: 100vh;
+    }
+
+    .app.left-collapsed .sidebar,
+    .app.right-collapsed .inspector {
+      padding: 0;
+      border: 0;
+      overflow: hidden;
     }
 
     .inspector {
@@ -96,6 +115,14 @@
       justify-content: space-between;
       gap: 12px;
       margin-bottom: 18px;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
     }
 
     .brand h1 {
@@ -196,6 +223,14 @@
       align-items: center;
     }
 
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
     .topbar h2 {
       margin: 0;
       font-size: 18px;
@@ -257,6 +292,11 @@
       border-radius: 7px;
       font-size: 18px;
       line-height: 1;
+    }
+
+    .sidebar-toggle {
+      width: 34px;
+      min-height: 34px;
     }
 
     .messages {
@@ -348,7 +388,7 @@
     <aside class="sidebar">
       <div class="brand">
         <h1>Chat With Your Codebase</h1>
-        <span class="badge">Free RAG</span>
+        <span id="modeBadge" class="badge">RAG</span>
       </div>
 
       <form id="indexForm" class="index-form">
@@ -373,7 +413,11 @@
       <header class="topbar">
         <div class="topbar-title">
           <h2 id="repoTitle">Choose a repo</h2>
-          <button id="riskButton" class="warn" type="button">Scan Risks</button>
+          <div class="topbar-actions">
+            <button id="leftToggle" class="icon-button sidebar-toggle" type="button" title="Toggle left sidebar">☰</button>
+            <button id="rightToggle" class="icon-button sidebar-toggle" type="button" title="Toggle right sidebar">▣</button>
+            <button id="riskButton" class="warn" type="button">Scan Risks</button>
+          </div>
         </div>
         <div id="metrics" class="metrics"></div>
         <div id="risks" class="risk-panel"></div>
@@ -390,6 +434,10 @@
     </main>
 
     <aside class="inspector">
+      <div class="panel-header">
+        <h2>Inspector</h2>
+        <button id="rightClose" class="icon-button" type="button" title="Close inspector">×</button>
+      </div>
       <div class="section">
         <h2>Architecture</h2>
         <div id="architecture" class="empty">No architecture summary yet.</div>
@@ -415,6 +463,15 @@
     };
 
     const $ = (id) => document.getElementById(id);
+
+    function togglePanel(side, force) {
+      const app = document.querySelector(".app");
+      const cls = side === "left" ? "left-collapsed" : "right-collapsed";
+      const shouldCollapse = typeof force === "boolean" ? force : !app.classList.contains(cls);
+      app.classList.toggle(cls, shouldCollapse);
+      $("leftToggle").textContent = app.classList.contains("left-collapsed") ? "☰" : "‹";
+      $("rightToggle").textContent = app.classList.contains("right-collapsed") ? "▣" : "›";
+    }
 
     function api(path, options = {}) {
       return fetch(path, {
@@ -483,7 +540,11 @@
       box.className = "";
       const languages = repo.architecture.languages.slice(0, 6).map((item) => `${item.name}: ${item.files}`).join("<br>");
       const folders = repo.architecture.top_folders.slice(0, 6).map((item) => `${item.name}: ${item.files}`).join("<br>");
-      const entrypoints = repo.architecture.entrypoints.slice(0, 6).join("<br>") || "No standard entrypoints found";
+      const usefulEntrypoints = repo.architecture.entrypoints.filter((path) => {
+        const name = path.split(/[\\/]/).pop();
+        return !["requirements.txt", "package.json", "README.md", "README.MD"].includes(name);
+      });
+      const entrypoints = (usefulEntrypoints.length ? usefulEntrypoints : repo.architecture.entrypoints).slice(0, 6).join("<br>") || "No standard entrypoints found";
       const onboarding = (repo.onboarding || []).map((item) => `<p>${item}</p>`).join("");
       box.innerHTML = `${onboarding}<h2>Languages</h2>${languages}<h2>Folders</h2>${folders}<h2>Entrypoints</h2>${entrypoints}`;
     }
@@ -571,6 +632,24 @@
       renderRepos();
     }
 
+    async function renderHealth() {
+      try {
+        const health = await api("/api/health");
+        const generation = health.generation || {};
+        if (generation.gemini_configured && generation.google_genai_installed) {
+          $("modeBadge").textContent = "Gemini RAG";
+        } else if (generation.ollama_configured) {
+          $("modeBadge").textContent = "Ollama RAG";
+        } else if (generation.openai_configured) {
+          $("modeBadge").textContent = "LLM RAG";
+        } else {
+          $("modeBadge").textContent = "Free RAG";
+        }
+      } catch {
+        $("modeBadge").textContent = "RAG";
+      }
+    }
+
     async function selectRepo(repoId) {
       const repo = await api(`/api/repos/${repoId}`);
       if (state.repoId !== repoId) resetWorkspace(repo);
@@ -655,6 +734,11 @@
       }
     });
 
+    $("leftToggle").addEventListener("click", () => togglePanel("left"));
+    $("rightToggle").addEventListener("click", () => togglePanel("right"));
+    $("rightClose").addEventListener("click", () => togglePanel("right", true));
+
+    renderHealth();
     refreshRepos().then(() => {
       if (state.repos[0]) selectRepo(state.repos[0].repo_id);
     });
