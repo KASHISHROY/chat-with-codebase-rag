@@ -17,6 +17,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import time
 import urllib.error
 import urllib.parse
@@ -26,9 +27,9 @@ from threading import Lock
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, Cookie, FastAPI, Header, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -68,6 +69,26 @@ INDEX_ROOT = ROOT_DIR / "faiss_index"
 CLONE_ROOT = ROOT_DIR / "cloned_repos"
 MANIFEST_FILE = INDEX_ROOT / "repos.json"
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "huggingface")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+GITHUB_OAUTH_CLIENT_ID = os.getenv("GITHUB_OAUTH_CLIENT_ID", "").strip()
+GITHUB_OAUTH_CLIENT_SECRET = os.getenv("GITHUB_OAUTH_CLIENT_SECRET", "").strip()
+GITHUB_OAUTH_REDIRECT_URI = os.getenv(
+    "GITHUB_OAUTH_REDIRECT_URI",
+    f"{APP_BASE_URL}/api/auth/github/callback",
+).strip()
+FRONTEND_REDIRECT_PATH = os.getenv("FRONTEND_REDIRECT_PATH", "/").strip() or "/"
+SESSION_COOKIE_NAME = "codebase_rag_session"
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "28800"))
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes"}
+
+
+def parse_cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", "http://127.0.0.1:8000,http://localhost:8000").strip()
+    origins = [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+    return origins or ["http://127.0.0.1:8000", "http://localhost:8000"]
+
+
+CORS_ORIGINS = parse_cors_origins()
 
 
 app = FastAPI(
@@ -78,8 +99,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials="*" not in CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -90,7 +111,6 @@ if FRONTEND_DIR.exists():
 
 class IndexRequest(BaseModel):
     github_url: str = Field(..., min_length=8)
-    github_token: str | None = None
     repo_description: str = ""
     repo_full_name: str = ""
 
@@ -126,8 +146,11 @@ class RepoSession(BaseModel):
 
 repo_lock = Lock()
 indexing_lock = Lock()
+auth_lock = Lock()
 repos: dict[str, dict[str, Any]] = {}
 runtime_cache: dict[str, dict[str, Any]] = {}
+oauth_states: dict[str, float] = {}
+github_sessions: dict[str, dict[str, Any]] = {}
 
 
 def now() -> float:
@@ -182,19 +205,86 @@ def get_repo_or_404(repo_id: str) -> dict[str, Any]:
     return repo
 
 
-def extract_github_token(authorization: str | None = None, required: bool = False) -> str | None:
+def cleanup_auth_cache() -> None:
+    current = now()
+    with auth_lock:
+        for state, expires_at in list(oauth_states.items()):
+            if expires_at <= current:
+                oauth_states.pop(state, None)
+        for session_id, session in list(github_sessions.items()):
+            if session.get("expires_at", 0) <= current:
+                github_sessions.pop(session_id, None)
+
+
+def get_session_token(session_id: str | None) -> str | None:
+    if not session_id:
+        return None
+    cleanup_auth_cache()
+    with auth_lock:
+        session = github_sessions.get(session_id)
+        if not session:
+            return None
+        return session.get("token")
+
+
+def extract_github_token(
+    authorization: str | None = None,
+    session_id: str | None = None,
+    required: bool = False,
+) -> str | None:
     token = ""
     if authorization:
         token = authorization.strip()
         if token.lower().startswith("bearer "):
             token = token[7:].strip()
-    token = token or os.getenv("GITHUB_TOKEN", "").strip()
+    token = token or get_session_token(session_id) or os.getenv("GITHUB_TOKEN", "").strip()
     if required and not token:
         raise HTTPException(
             status_code=401,
-            detail="Connect GitHub with a personal access token or set GITHUB_TOKEN in .env.",
+            detail="Connect GitHub with OAuth, send an Authorization bearer token, or set GITHUB_TOKEN in .env.",
         )
     return token or None
+
+
+def require_github_oauth_config() -> None:
+    if not GITHUB_OAUTH_CLIENT_ID or not GITHUB_OAUTH_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="GitHub OAuth is not configured. Set GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET.",
+        )
+
+
+def exchange_github_oauth_code(code: str) -> str:
+    require_github_oauth_config()
+    payload = urllib.parse.urlencode(
+        {
+            "client_id": GITHUB_OAUTH_CLIENT_ID,
+            "client_secret": GITHUB_OAUTH_CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": GITHUB_OAUTH_REDIRECT_URI,
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        "https://github.com/login/oauth/access_token",
+        data=payload,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "chat-with-codebase-rag",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=25) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        raise HTTPException(status_code=502, detail=f"Could not finish GitHub OAuth: {exc}")
+
+    if data.get("error"):
+        raise HTTPException(status_code=401, detail=data.get("error_description") or data["error"])
+    token = (data.get("access_token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="GitHub did not return an access token.")
+    return token
 
 
 def github_api_get(path: str, token: str | None = None, params: dict[str, Any] | None = None) -> Any:
@@ -537,6 +627,10 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "embedding_provider": EMBEDDING_PROVIDER,
+        "github_auth": {
+            "oauth_configured": bool(GITHUB_OAUTH_CLIENT_ID and GITHUB_OAUTH_CLIENT_SECRET),
+            "session_cookie": SESSION_COOKIE_NAME,
+        },
         "generation": {
             "gemini_configured": bool(os.getenv("GEMINI_API_KEY", "").strip()),
             "gemini_model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
@@ -548,9 +642,76 @@ def health() -> dict[str, Any]:
     }
 
 
+@app.get("/api/auth/github/start", response_model=None)
+def github_oauth_start() -> RedirectResponse:
+    require_github_oauth_config()
+    cleanup_auth_cache()
+    state = secrets.token_urlsafe(32)
+    with auth_lock:
+        oauth_states[state] = now() + 600
+
+    params = {
+        "client_id": GITHUB_OAUTH_CLIENT_ID,
+        "redirect_uri": GITHUB_OAUTH_REDIRECT_URI,
+        "scope": "repo read:user",
+        "state": state,
+    }
+    auth_url = f"https://github.com/login/oauth/authorize?{urllib.parse.urlencode(params)}"
+    return RedirectResponse(auth_url, status_code=302)
+
+
+@app.get("/api/auth/github/callback", response_model=None)
+def github_oauth_callback(
+    code: str = Query(default=""),
+    state: str = Query(default=""),
+) -> RedirectResponse:
+    cleanup_auth_cache()
+    with auth_lock:
+        expires_at = oauth_states.pop(state, 0)
+    if not code or not state or expires_at <= now():
+        raise HTTPException(status_code=400, detail="GitHub OAuth state is missing or expired. Try connecting again.")
+
+    token = exchange_github_oauth_code(code)
+    profile = github_api_get("/user", token)
+    session_id = secrets.token_urlsafe(32)
+    with auth_lock:
+        github_sessions[session_id] = {
+            "token": token,
+            "profile": profile,
+            "expires_at": now() + SESSION_TTL_SECONDS,
+        }
+
+    response = RedirectResponse(FRONTEND_REDIRECT_PATH, status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session_id,
+        httponly=True,
+        secure=SESSION_COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+        path="/",
+    )
+    return response
+
+
+@app.post("/api/auth/logout")
+def github_logout(
+    response: Response,
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, str]:
+    if session_id:
+        with auth_lock:
+            github_sessions.pop(session_id, None)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return {"status": "signed_out"}
+
+
 @app.get("/api/github/me")
-def github_me(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    token = extract_github_token(authorization, required=True)
+def github_me(
+    authorization: str | None = Header(default=None),
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    token = extract_github_token(authorization, session_id, required=True)
     profile = github_api_get("/user", token)
     return {
         "login": profile.get("login"),
@@ -563,8 +724,11 @@ def github_me(authorization: str | None = Header(default=None)) -> dict[str, Any
 
 
 @app.get("/api/github/repos")
-def github_repos(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    token = extract_github_token(authorization, required=True)
+def github_repos(
+    authorization: str | None = Header(default=None),
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+) -> dict[str, Any]:
+    token = extract_github_token(authorization, session_id, required=True)
     found: list[dict[str, Any]] = []
     for page in range(1, 4):
         page_items = github_api_get(
@@ -626,11 +790,12 @@ def start_indexing(
     payload: IndexRequest,
     background_tasks: BackgroundTasks,
     authorization: str | None = Header(default=None),
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> dict[str, Any]:
     github_url = payload.github_url.strip()
     if not github_url.startswith(("https://github.com/", "git@github.com:")):
         raise HTTPException(status_code=400, detail="Please enter a valid GitHub repository URL.")
-    github_token = payload.github_token or extract_github_token(authorization, required=False)
+    github_token = extract_github_token(authorization, session_id, required=False)
 
     repo_id = make_repo_id(github_url)
     existing = repos.get(repo_id)

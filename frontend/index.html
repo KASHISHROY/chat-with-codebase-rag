@@ -664,12 +664,13 @@
       <section id="authView" class="view auth-view">
         <div class="auth-card">
           <h2>Connect GitHub Account</h2>
-          <p>Paste a GitHub profile link to load that account's public repositories. You can also continue without connecting and paste a repo URL on the next screen.</p>
+          <p>Sign in with GitHub to load public and private repositories, or paste a public GitHub profile link below.</p>
           <div class="form-stack">
+            <button id="githubOAuthButton" class="primary" type="button" disabled>Sign in with GitHub</button>
             <input id="githubAccountLink" type="text" placeholder="https://github.com/username" autocomplete="off">
-            <button id="connectGithub" class="primary" type="button">Connect Account</button>
+            <button id="connectGithub" type="button">Load Public Profile</button>
             <button id="continueWithoutLogin" type="button">Continue Without Login</button>
-            <div id="authStatus" class="status-line">Only public repositories are loaded from a profile link.</div>
+            <div id="authStatus" class="status-line">GitHub OAuth loads private repos when configured on the backend.</div>
           </div>
         </div>
       </section>
@@ -856,6 +857,7 @@
       githubUser: null,
       githubAccountLink: sessionStorage.getItem("github_account_link") || "",
       authGatePassed: sessionStorage.getItem("auth_gate_passed") === "true",
+      githubOAuthConfigured: false,
       files: [],
       answerSources: [],
       selectedGithubRepo: null,
@@ -876,7 +878,7 @@
 
     function api(path, options = {}) {
       const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-      return fetch(path, { ...options, headers }).then(async (response) => {
+      return fetch(path, { credentials: "include", ...options, headers }).then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || "Request failed");
         return data;
@@ -998,7 +1000,7 @@
       options.innerHTML = "";
       if (!state.githubRepos.length) {
         select.classList.add("hidden");
-        $("repoChooserHint").textContent = "Paste a public GitHub URL.";
+        $("repoChooserHint").textContent = "Paste a GitHub URL.";
         return;
       }
       select.classList.remove("hidden");
@@ -1318,6 +1320,11 @@
     async function renderHealth() {
       try {
         const health = await api("/api/health");
+        state.githubOAuthConfigured = Boolean(health.github_auth?.oauth_configured);
+        $("githubOAuthButton").disabled = !state.githubOAuthConfigured;
+        if (!state.githubOAuthConfigured) {
+          $("authStatus").textContent = "GitHub OAuth is not configured yet. You can still paste a public profile or repo URL.";
+        }
         const generation = health.generation || {};
         if (generation.gemini_configured && generation.google_genai_installed) {
           $("modeBadge").textContent = "Gemini RAG";
@@ -1330,6 +1337,32 @@
         }
       } catch {
         $("modeBadge").textContent = "RAG";
+      }
+    }
+
+    function startGithubOAuth() {
+      window.location.href = "/api/auth/github/start";
+    }
+
+    async function loadAuthenticatedGithub(fromLogin = false) {
+      try {
+        const [user, repos] = await Promise.all([
+          api("/api/github/me"),
+          api("/api/github/repos")
+        ]);
+        state.githubUser = user;
+        state.githubRepos = repos.repos || [];
+        state.githubAccountLink = "";
+        state.authGatePassed = true;
+        sessionStorage.removeItem("github_account_link");
+        sessionStorage.setItem("auth_gate_passed", "true");
+        $("authStatus").textContent = `Connected to ${state.githubUser.login}. Loaded ${state.githubRepos.length} repositories.`;
+        renderGithubOptions();
+        renderSession();
+        if (fromLogin) goHome();
+        return true;
+      } catch {
+        return false;
       }
     }
 
@@ -1378,8 +1411,9 @@
       goHome();
     }
 
-    function signOutOrLogin() {
+    async function signOutOrLogin() {
       if (state.githubUser || state.githubAccountLink) {
+        await api("/api/auth/logout", { method: "POST" }).catch(() => ({}));
         state.githubAccountLink = "";
         state.githubUser = null;
         state.githubRepos = [];
@@ -1540,6 +1574,7 @@
       }
     }
 
+    $("githubOAuthButton").addEventListener("click", startGithubOAuth);
     $("connectGithub").addEventListener("click", () => loadGithub(true));
     $("continueWithoutLogin").addEventListener("click", continueWithoutLogin);
     $("homeButton").addEventListener("click", goHome);
@@ -1579,17 +1614,21 @@
     renderTask(null);
     renderHealth();
     refreshRepos().then(renderHome);
-    if (state.githubAccountLink) {
-      $("githubAccountLink").value = state.githubAccountLink;
-      loadGithub(false).then((ok) => {
-        if (ok || state.authGatePassed) goHome();
-        else setView("auth");
-      });
-    } else if (state.authGatePassed) {
-      goHome();
-    } else {
-      setView("auth");
-    }
+    loadAuthenticatedGithub(false).then((ok) => {
+      if (ok) {
+        goHome();
+      } else if (state.githubAccountLink) {
+        $("githubAccountLink").value = state.githubAccountLink;
+        loadGithub(false).then((ok) => {
+          if (ok || state.authGatePassed) goHome();
+          else setView("auth");
+        });
+      } else if (state.authGatePassed) {
+        goHome();
+      } else {
+        setView("auth");
+      }
+    });
   </script>
 </body>
 </html>
