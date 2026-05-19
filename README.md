@@ -135,6 +135,6 @@ frontend/
   index.html       Static app UI served by FastAPI
 ```
 
-## Resume Angle
+## ONE LINE EXPLANATION
 
 Built a full-stack RAG developer assistant that indexes GitHub repositories, performs semantic code search with FAISS and local embeddings, and answers developer questions with source citations, architecture summaries, suggested onboarding prompts, and lightweight risk scanning.
